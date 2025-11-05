@@ -24,8 +24,7 @@
 // ============================================================================
 // WIFI CONFIGURATION
 // ============================================================================
-#define WIFI_SSID "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+// WIFI_SSID and WIFI_PASSWORD are defined in Secrets.h
 #define WIFI_TIMEOUT_MS 20000  // 20 seconds
 
 // ============================================================================
@@ -38,13 +37,8 @@
 // ============================================================================
 // MQTT CONFIGURATION
 // ============================================================================
+// MQTT_USERNAME, MQTT_PASSWORD, MQTT_BROKER, and MQTT_PORT are in Secrets.h
 #define MQTT_ENABLED true
-#define MQTT_BROKER "mqtt.example.com"
-#define MQTT_PORT 1883
-#define MQTT_CLIENT_ID "esp32c3-logger"
-#define MQTT_TOPIC "sensors/esp32c3/data"
-#define MQTT_USERNAME ""  // Leave empty if not required
-#define MQTT_PASSWORD ""  // Leave empty if not required
 
 // ============================================================================
 // TASK TIMING CONFIGURATION (milliseconds)
