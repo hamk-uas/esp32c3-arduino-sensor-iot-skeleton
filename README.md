@@ -199,19 +199,25 @@ esp32c3_data_logger/
 
 ## Configuration
 
-Edit `Config.h` to customize:
+Edit `Secrets.h` to customize:
 
 ```cpp
 // Wi-Fi credentials
 #define WIFI_SSID "your-ssid"
 #define WIFI_PASSWORD "your-password"
 
+// MQTT broker
+#define MQTT_BROKER "mqtt.example.com"
+#define MQTT_PORT 1883
+```
+
+Edit `Config.h` to customize:
+
+```cpp
 // NTP server
 #define NTP_SERVER "pool.ntp.org"
 
 // MQTT broker
-#define MQTT_BROKER "mqtt.example.com"
-#define MQTT_PORT 1883
 #define MQTT_TOPIC "sensors/esp32c3"
 
 // Timing intervals
@@ -219,6 +225,7 @@ Edit `Config.h` to customize:
 #define AGGREGATION_INTERVAL_MS 60000
 #define CLOUD_UPLOAD_INTERVAL_MS 300000
 ```
+
 
 ## Data Format
 
