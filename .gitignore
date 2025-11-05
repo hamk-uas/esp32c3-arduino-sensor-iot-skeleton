@@ -1,0 +1,9 @@
+# Arduino build artifacts
+esp32c3_data_logger/build/
+*.elf
+*.bin
+*.map
+
+# IDE files
+.vscode/
+.DS_Store
