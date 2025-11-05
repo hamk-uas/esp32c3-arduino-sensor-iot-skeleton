@@ -7,3 +7,6 @@ esp32c3_data_logger/build/
 # IDE files
 .vscode/
 .DS_Store
+
+# Secrets
+esp32c3_data_logger/Secrets.h
