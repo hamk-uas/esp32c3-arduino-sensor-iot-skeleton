@@ -114,62 +114,57 @@ void setup() {
     DEBUG_PRINTLN("[SETUP] Creating FreeRTOS tasks...");
     
     // Time Synchronization Task (Lowest priority - runs at startup and daily)
-    xTaskCreatePinnedToCore(
+    xTaskCreate(
         timeSyncTask,           // Function
         "TimeSync",             // Name
         TIME_SYNC_TASK_STACK,   // Stack size
         NULL,                   // Parameters
         TIME_SYNC_TASK_PRIORITY,// Priority
-        &timeSyncTaskHandle,    // Handle
-        1                       // Core (use core 1)
+        &timeSyncTaskHandle     // Handle
     );
     DEBUG_PRINTLN("[SETUP] ✓ Time Sync task created (Priority 0)");
     
     // Sensor Reading Task (Highest priority - time critical)
-    xTaskCreatePinnedToCore(
+    xTaskCreate(
         sensorReadingTask,      // Function
         "SensorRead",           // Name
         SENSOR_TASK_STACK,      // Stack size
         NULL,                   // Parameters
         SENSOR_TASK_PRIORITY,   // Priority
-        &sensorTaskHandle,      // Handle
-        1                       // Core (use core 1)
+        &sensorTaskHandle      // Handle
     );
     DEBUG_PRINTLN("[SETUP] ✓ Sensor Reading task created (Priority 3)");
     
     // Data Aggregation Task (Medium priority)
-    xTaskCreatePinnedToCore(
+    xTaskCreate(
         aggregationTask,        // Function
         "Aggregation",          // Name
         AGGREGATION_TASK_STACK, // Stack size
         NULL,                   // Parameters
         AGGREGATION_TASK_PRIORITY, // Priority
-        &aggregationTaskHandle, // Handle
-        1                       // Core (use core 1)
+        &aggregationTaskHandle  // Handle
     );
     DEBUG_PRINTLN("[SETUP] ✓ Aggregation task created (Priority 2)");
     
     // SD Logging Task (Medium priority)
-    xTaskCreatePinnedToCore(
+    xTaskCreate(
         loggingTask,            // Function
         "SDLogging",            // Name
         LOGGING_TASK_STACK,     // Stack size
         NULL,                   // Parameters
         LOGGING_TASK_PRIORITY,  // Priority
-        &loggingTaskHandle,     // Handle
-        0                       // Core (use core 0)
+        &loggingTaskHandle      // Handle
     );
     DEBUG_PRINTLN("[SETUP] ✓ SD Logging task created (Priority 2)");
     
     // Cloud Upload Task (Low priority)
-    xTaskCreatePinnedToCore(
+    xTaskCreate(
         cloudUploadTask,        // Function
         "CloudUpload",          // Name
         CLOUD_TASK_STACK,       // Stack size
         NULL,                   // Parameters
         CLOUD_TASK_PRIORITY,    // Priority
-        &cloudTaskHandle,       // Handle
-        0                       // Core (use core 0)
+        &cloudTaskHandle        // Handle
     );
     DEBUG_PRINTLN("[SETUP] ✓ Cloud Upload task created (Priority 1)");
     

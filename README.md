@@ -24,20 +24,20 @@ graph TB
         direction TB
         
         subgraph Priority3["Priority 3 (Highest)"]
-            STASK[Sensor Reading Task<br/>Every 1 second<br/>Core 1]
+            STASK[Sensor Reading Task<br/>Every 1 second<br/>]
         end
         
         subgraph Priority2["Priority 2 (Medium)"]
-            ATASK[Aggregation Task<br/>Every 60 seconds<br/>Core 1]
-            LTASK[SD Logging Task<br/>On-demand<br/>Core 0]
+            ATASK[Aggregation Task<br/>Every 60 seconds<br/>]
+            LTASK[SD Logging Task<br/>On-demand<br/>]
         end
         
         subgraph Priority1["Priority 1 (Low)"]
-            CTASK[Cloud Upload Task<br/>Every 5 minutes<br/>Core 0]
+            CTASK[Cloud Upload Task<br/>Every 5 minutes<br/>]
         end
         
         subgraph Priority0["Priority 0 (Lowest)"]
-            TTASK[Time Sync Task<br/>Startup + Daily<br/>Core 1]
+            TTASK[Time Sync Task<br/>Startup + Daily<br/>]
         end
     end
 
