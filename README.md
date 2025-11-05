@@ -2,6 +2,119 @@
 
 A production-ready, FreeRTOS-based IoT sensor data logger for ESP32-C3 using the Arduino framework. Features modular sensor architecture, robust multitasking, and reliable data logging.
 
+```mermaid
+graph TB
+    subgraph Hardware["🔧 Hardware Layer"]
+        RTC[DS1308 RTC<br/>I²C]
+        DS18[DS18B20<br/>1-Wire Temp]
+        SHT[SHT40<br/>I²C Temp/RH]
+        SOIL[SEN0193<br/>Analog Moisture]
+        SD[SD Card<br/>SPI]
+        WIFI[WiFi Radio]
+    end
+
+    subgraph Sensors["📡 Sensor Drivers (ISensor Interface)"]
+        RTCS[DS1308Sensor<br/>Time Provider]
+        DS18S[DS18B20Sensor<br/>Temperature]
+        SHTS[SHT40Sensor<br/>Temp + Humidity]
+        SOILS[SEN0193Sensor<br/>Soil Moisture]
+    end
+
+    subgraph Tasks["⚙️ FreeRTOS Tasks"]
+        direction TB
+        
+        subgraph Priority3["Priority 3 (Highest)"]
+            STASK[Sensor Reading Task<br/>Every 1 second<br/>Core 1]
+        end
+        
+        subgraph Priority2["Priority 2 (Medium)"]
+            ATASK[Aggregation Task<br/>Every 60 seconds<br/>Core 1]
+            LTASK[SD Logging Task<br/>On-demand<br/>Core 0]
+        end
+        
+        subgraph Priority1["Priority 1 (Low)"]
+            CTASK[Cloud Upload Task<br/>Every 5 minutes<br/>Core 0]
+        end
+        
+        subgraph Priority0["Priority 0 (Lowest)"]
+            TTASK[Time Sync Task<br/>Startup + Daily<br/>Core 1]
+        end
+    end
+
+    subgraph Queues["📬 FreeRTOS Queues"]
+        RAWQ[(Raw Reading Queue<br/>60 items)]
+        AGGQ[(Aggregated Data Queue<br/>10 items)]
+    end
+
+    subgraph Sync["🔒 Synchronization"]
+        MUTEX[SD Card Mutex]
+    end
+
+    subgraph External["🌐 External Services"]
+        NTP[NTP Server<br/>pool.ntp.org]
+        MQTT[MQTT Broker<br/>Cloud Service]
+    end
+
+    subgraph Storage["💾 Data Storage"]
+        CSV[Daily CSV Files<br/>data_YYYYMMDD.csv]
+    end
+
+    %% Hardware to Drivers
+    RTC -.->|I²C| RTCS
+    DS18 -.->|1-Wire| DS18S
+    SHT -.->|I²C| SHTS
+    SOIL -.->|ADC| SOILS
+    SD -.->|SPI| LTASK
+    WIFI -.->|Radio| CTASK
+    WIFI -.->|Radio| TTASK
+
+    %% Sensor Task Flow
+    RTCS -->|timestamp| STASK
+    DS18S -->|temperature| STASK
+    SHTS -->|temp + RH| STASK
+    SOILS -->|moisture| STASK
+    
+    STASK -->|RawReading<br/>struct| RAWQ
+    
+    %% Aggregation Flow
+    RAWQ -->|60 readings| ATASK
+    ATASK -->|AggregatedData<br/>min/max/avg| AGGQ
+    
+    %% Output Flow
+    AGGQ -->|statistics| LTASK
+    AGGQ -->|statistics| CTASK
+    
+    %% Storage
+    LTASK -->|acquire| MUTEX
+    MUTEX -.->|protect| LTASK
+    LTASK -->|write CSV| CSV
+    
+    %% Cloud
+    CTASK -->|JSON payload| MQTT
+    
+    %% Time Sync
+    TTASK -->|sync request| NTP
+    NTP -->|UTC time| TTASK
+    TTASK -->|update| RTCS
+    
+    %% Styling
+    classDef hardware fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef sensor fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef task fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef queue fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef sync fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef external fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    classDef storage fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    
+    class RTC,DS18,SHT,SOIL,SD,WIFI hardware
+    class RTCS,DS18S,SHTS,SOILS sensor
+    class STASK,ATASK,LTASK,CTASK,TTASK task
+    class RAWQ,AGGQ queue
+    class MUTEX sync
+    class NTP,MQTT external
+    class CSV storage
+```
+
 ## Features
 
 - **Multi-sensor support**: DS18B20 (temperature), SHT40 (temp/humidity), SEN0193 (soil moisture)
