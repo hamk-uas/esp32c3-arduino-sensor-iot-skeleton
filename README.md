@@ -72,8 +72,8 @@ Edit `esp32c3_data_logger/esp32c3_data_logger.ino` to customize
 
 ## Troubleshooting
 
-**RTC not found**: Check I²C connections and pull-up resistors
-**Wi-Fi won't connect**: Check SSID/password, ensure 2.4GHz network
+* **RTC not found**: Check I²C connections and pull-up resistors
+* **Wi-Fi won't connect**: Check SSID/password, ensure 2.4GHz network
 
 ## License
 
