@@ -43,7 +43,7 @@ README.md                       # This file
 
 ## Configuration
 
-Edit `Secrets.h` to customize:
+Edit `esp32c3_data_logger/Secrets.h` to customize:
 
 ```cpp
 #ifndef SECRETS_H
@@ -56,7 +56,7 @@ const char *password = "MY_WIFI_PASSWORD";
 #endif // SECRETS_H
 ```
 
-Edit `esp32c3_data_logger.ino` to customize
+Edit `esp32c3_data_logger/esp32c3_data_logger.ino` to customize
 
 ```cpp
 // NTP server
