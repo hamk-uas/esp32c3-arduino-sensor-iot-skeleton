@@ -11,7 +11,7 @@
 // WIFI_SSID and WIFI_PASSWORD are defined in Secrets.h
 #define WIFI_TIMEOUT_MS 20000  // 20 seconds
 
-// NTP Time Synchronization
+// NTP server
 #define NTP_SERVER "pool.ntp.org"
 #define NTP_TIMEZONE_OFFSET 0  // UTC offset in seconds (0 for UTC)
 #define NTP_DAYLIGHT_OFFSET 0  // Daylight saving offset in seconds
