@@ -55,7 +55,7 @@ Edit `esp32c3_data_logger.ino` to customize
 ## Getting Started
 
 1. **Install libraries** via Arduino Library Manager
-2. **Edit Secrets.h* with your Wi-Fi and MQTT credentials
+2. **Edit Secrets.h** with your Wi-Fi and MQTT credentials
 5. **Upload sketch** to ESP32-C3
 6. **Monitor Serial** output at 115200 baud
 
