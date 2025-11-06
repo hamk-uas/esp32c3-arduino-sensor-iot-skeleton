@@ -15,9 +15,15 @@
 | DS1308 RTC | I²C SDA | GPIO8 |
 | DS1308 RTC | I²C SCL | GPIO9 |
 
+## Getting started in Arduino IDE
+
+Follow the [Getting Started with the ESP32-C3 Super Mini](https://randomnerdtutorials.com/getting-started-esp32-c3-super-mini/) tutorial.
+
+Open `esp32c3_data_logger/esp32c3_data_logger.ino` in Arduino IDE.
+
 ## Required Libraries
 
-Install via Arduino Library Manager:
+Install with dependencies via Arduino Library Manager:
 
 - `RTClib` by Adafruit (v2.1.1+)
 
@@ -40,9 +46,14 @@ README.md                       # This file
 Edit `Secrets.h` to customize:
 
 ```cpp
-// Wi-Fi credentials
-#define WIFI_SSID "your-ssid"
-#define WIFI_PASSWORD "your-password"
+#ifndef SECRETS_H
+#define SECRETS_H
+
+// WiFi
+const char *ssid = "MY_WIFI_SSID";
+const char *password = "MY_WIFI_PASSWORD";
+
+#endif // SECRETS_H
 ```
 
 Edit `esp32c3_data_logger.ino` to customize
