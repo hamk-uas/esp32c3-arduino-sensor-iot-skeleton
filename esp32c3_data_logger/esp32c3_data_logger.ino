@@ -1,61 +1,24 @@
-/**
- * ESP32-C3 Modular Data Logger
- * 
- * A robust, FreeRTOS-based multi-sensor data logging system with:
- * - Modular sensor architecture (easy to add new sensors)
- * - Real-time clock with NTP synchronization
- * - SD card logging with thread-safe file access
- * - MQTT cloud upload capability
- * - Proper task prioritization and timing
- * 
- * Author: [Your Name]
- * Date: 2024
- * License: MIT
- */
-
 #include <Arduino.h>
-#include <Wire.h>
-#include "Config.h"
-#include "RawReading.h"
 
-// ============================================================================
-// FREERTOS RESOURCES
-// ============================================================================
+// Secrets
+#include "Secrets.h"
 
-// Task Handles
-TaskHandle_t sensorTaskHandle = NULL;
-TaskHandle_t aggregationTaskHandle = NULL;
-TaskHandle_t loggingTaskHandle = NULL;
-TaskHandle_t cloudTaskHandle = NULL;
-TaskHandle_t timeSyncTaskHandle = NULL;
+// I2C Pins (DS1308 RTC and SHT40)
+#define I2C_SDA_PIN 8
+#define I2C_SCL_PIN 9
 
-// Queue Handles
-QueueHandle_t rawReadingQueue = NULL;
-QueueHandle_t aggregatedDataQueue = NULL;
+// WiFi
+// WIFI_SSID and WIFI_PASSWORD are defined in Secrets.h
+#define WIFI_TIMEOUT_MS 20000  // 20 seconds
 
-// Mutex Handle
-SemaphoreHandle_t sdCardMutex = NULL;
+// NTP Time Synchronization
+#define NTP_SERVER "pool.ntp.org"
+#define NTP_TIMEZONE_OFFSET 0  // UTC offset in seconds (0 for UTC)
+#define NTP_DAYLIGHT_OFFSET 0  // Daylight saving offset in seconds
 
-// ============================================================================
-// SYSTEM STATUS
-// ============================================================================
-
-SystemStatus systemStatus;
-
-// ============================================================================
-// TASK FUNCTION DECLARATIONS
-// ============================================================================
-
-// Defined in respective .cpp files
-extern void sensorReadingTask(void* parameter);
-extern void aggregationTask(void* parameter);
-extern void loggingTask(void* parameter);
-extern void cloudUploadTask(void* parameter);
-extern void timeSyncTask(void* parameter);
-
-// ============================================================================
-// SETUP FUNCTION
-// ============================================================================
+// Debugging
+#define DEBUG_ENABLED true
+#define SERIAL_BAUD_RATE 115200
 
 void setup() {
     // ========================================================================
