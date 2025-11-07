@@ -53,14 +53,12 @@ Edit `esp32c3_data_logger/Secrets.h` to customize:
 const char *ssid = "MY_WIFI_SSID";
 const char *password = "MY_WIFI_PASSWORD";
 
+// Time zone
+// Won't affect UTC time, only local time.
+// For time zones see https://raw.githubusercontent.com/nayarsystems/posix_tz_db/master/zones.csv
+const char *time_zone = "EET-2EEST,M3.5.0/3,M10.5.0/4";  // Finland
+
 #endif // SECRETS_H
-```
-
-Edit `esp32c3_data_logger/esp32c3_data_logger.ino` to customize
-
-```cpp
-// NTP server
-#define NTP_SERVER "pool.ntp.org"
 ```
 
 ## Getting Started
