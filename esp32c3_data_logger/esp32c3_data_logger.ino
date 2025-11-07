@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <time.h>
 #include <esp_sntp.h>
+
 // Secrets
 #include "Secrets.h"
 
@@ -18,69 +19,83 @@ const int ledPin = 8;
 // NTP server
 const char *ntpServer1 = "pool.ntp.org";
 const char *ntpServer2 = "time.nist.gov";
-const char *time_zone = "UTC0";  // See https://github.com/esp8266/Arduino/blob/master/cores/esp8266/TZ.h
+const char *time_zone = "EET-2EEST,M3.5.0/3,M10.5.0/4"; // See https://raw.githubusercontent.com/nayarsystems/posix_tz_db/master/zones.csv
 
 // Debugging
 #define DEBUG_ENABLED true
 #define SERIAL_BAUD_RATE 115200
 
-void printUTCTimeISO() {
+void printUTCTimeISO(time_t &now) {
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    Serial.println("No time available (yet)");
-    return;
-  }
-
-  char isoTime[25];
+  char isoTime[30];
+  gmtime_r(&now, &timeinfo);
   strftime(isoTime, sizeof(isoTime), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
   Serial.println(isoTime);
 }
 
-void timeavailable(struct timeval *t) {
-  Serial.println("Got time adjustment from NTP!");
-  printUTCTimeISO();
+void printLocalTime(time_t &now) {
+  struct tm timeinfo;
+  char isoTime[30];
+  localtime_r(&now, &timeinfo);
+  strftime(isoTime, sizeof(isoTime), "%Y-%m-%dT%H:%M:%S (local)", &timeinfo);
+  Serial.println(isoTime);
 }
 
 void setup() {
+    // Setup LED pin as output
     pinMode(ledPin, OUTPUT);
+
+    // Setup serial for serial monitor
     Serial.begin(SERIAL_BAUD_RATE);
 
+    // Print program name
     Serial.println("========================================");
     Serial.println("  ESP32-C3 Data Logger");
     Serial.println("========================================");
-    Serial.println("");
-    Serial.printf("Compiled: %s %s\n", __DATE__, __TIME__);
-    Serial.printf("Free Heap: %lu bytes\n", ESP.getFreeHeap());
-    Serial.printf("Chip Model: %s\n", ESP.getChipModel());
-    Serial.printf("CPU Frequency: %lu MHz\n", ESP.getCpuFreqMHz());
-    Serial.println("");    
 
-    Serial.println("Scanning WiFi...");
+    // Scan for available WiFi hotspots
+    Serial.print("Scanning WiFi ...");
     int n = WiFi.scanNetworks();
-    Serial.println("Scan done");
+    Serial.println(" DONE");
+    bool found_configured_ssid = false;
     for (int i = 0; i < n; i++) {
+        bool is_configured_ssid = (strcmp(WiFi.SSID(i).c_str(), wifi_ssid) == 0);
+        found_configured_ssid = found_configured_ssid || is_configured_ssid;
         Serial.printf("%d: %s  (%d dBm)  %s%s\n",
-            i+1,
+            i,
             WiFi.SSID(i).c_str(),
             WiFi.RSSI(i),
             (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "OPEN" : "SECURED",
-            (strcmp(WiFi.SSID(i).c_str(), wifi_ssid) == 0) ? "  Matches the configured SSID": ""
+            (is_configured_ssid) ? "  Matches the configured SSID": ""
         );
     }
+    if (!found_configured_ssid) {
+        Serial.println("Warning: Configured WiFi SSID not found in scan.");
+    }
 
-    Serial.printf("\nConnecting to %s ", wifi_ssid);
+    // Connect to the configured WiFi hotspot
+    Serial.printf("\nConnecting to %s ...", wifi_ssid);
     WiFi.mode(WIFI_STA);
     WiFi.begin(wifi_ssid, wifi_password);
     WiFi.setTxPower(WIFI_POWER_8_5dBm);
-    //esp_sntp_servermode_dhcp(1);  // (optional)
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
     }
     Serial.println(" CONNECTED");
-    // set notification call-back function
-    sntp_set_time_sync_notification_cb(timeavailable);
+
+    // Get current time from a Network Time Protocol (NTP) server and set time zone to UTC
+    Serial.print("Waiting for time sync ...");
+    time_t now = 0;
     configTzTime(time_zone, ntpServer1, ntpServer2);
+    while (now == 0) {
+      Serial.print(".");
+      delay(500);
+      now = time(nullptr);
+    }
+    Serial.println(" DONE");
+    printUTCTimeISO(now);
+    printLocalTime(now);
 }
 
 void loop() {
@@ -89,5 +104,8 @@ void loop() {
     delay(1000);                     
     digitalWrite(ledPin, LOW); 
     Serial.println("LED ON");
-    delay(1000);        
+    delay(1000);
+    time_t now;
+    now = time(nullptr);
+    printUTCTimeISO(now);
 }
