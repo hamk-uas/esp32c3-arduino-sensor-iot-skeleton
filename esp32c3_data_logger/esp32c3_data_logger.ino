@@ -5,283 +5,314 @@
 #include <RTClib.h>
 
 // Secrets
+// -------
+
+// In Secrets.h, configure:
+// wifi_ssid and wifi_password
+// time_zone
 #include "Secrets.h"
+
+// Helpful constants
+// -----------------
+
+// Conversion factor from microseconds to seconds
+constexpr uint64_t MICROS_PER_SECOND = 1000000ULL;
 
 // Configuration
 // -------------
+
+// Sampling interval in microseconds
+constexpr uint64_t samplingPeriodMicros = MICROS_PER_SECOND * 30; // 30 seconds
 
 // I2C Pins (DS1308 RTC)
 constexpr uint8_t I2C_SDA_PIN = 8;
 constexpr uint8_t I2C_SCL_PIN = 9;
 
 // Serial monitor
-constexpr unsigned long SERIAL_BAUD_RATE = 115200;
-
-// WiFi
-// wifi_ssid and wifi_password are configured in Secrets.h
+constexpr uint32_t SERIAL_BAUD_RATE = 115200;
 
 // NTP server
-// time_zone is configured in Secrets.h
-const char *ntpServer1 = "pool.ntp.org";
-const char *ntpServer2 = "time.nist.gov";
- 
-// Contants
-// --------
-
-// Conversion factors
-constexpr unsigned long uS_TO_S = 1000000ULL;  // Conversion factor for micro seconds to seconds
+const char* ntpServerPrimary = "pool.ntp.org";
+const char* ntpServerSecondary = "time.nist.gov";
 
 // State
 // -----
 
-// DS1308 RTC
-RTC_DS1307 ds1308_rtc;  // DS1308 is compatible with DS1307
+// DS1308 RTC (compatible with DS1307)
+RTC_DS1307 rtc;
 
 // Boot count in ESP32-C3 RTC memory, value retained over deep sleep
-RTC_DATA_ATTR unsigned long boot_count = 0;
+RTC_DATA_ATTR unsigned long bootCount = 0;
 
 // Planned wake time (no plan initially, fill with zeros)
-RTC_DATA_ATTR struct timeval wake_time = {0, 0};
+RTC_DATA_ATTR struct timeval wakeTime = {0, 0};
 
 // Functions
 // ---------
 
-// Calculate microseconds until next even minute (UTC)
-unsigned long long microsecondsUntilNextEvenMinute(const struct timeval &tv) {
-  struct tm timeinfo;
-  gmtime_r(&tv.tv_sec, &timeinfo);
-  
-  // Get current seconds past the minute
-  unsigned long seconds_past_minute = timeinfo.tm_sec;
-  
-  // Get current microseconds
-  unsigned long microseconds = tv.tv_usec;
-  
-  // Calculate microseconds remaining in current minute
-  unsigned long long microseconds_to_next_minute = 
-    (60ULL - seconds_past_minute) * uS_TO_S - microseconds;
-  
-  // Check if current minute is odd
-  bool current_minute_is_odd = (timeinfo.tm_min % 2) == 1;
-  
-  // If current minute is odd, we need to wait until the next minute
-  // If current minute is even, we need to wait until the minute after next
-  unsigned long long total_microseconds;
-  if (current_minute_is_odd) {
-    total_microseconds = microseconds_to_next_minute;
-  } else {
-    total_microseconds = microseconds_to_next_minute + (60ULL * uS_TO_S);
+uint64_t microsecondsUntilNextSample(
+    const struct timeval& now,
+    uint64_t samplingPeriodMicros
+) {
+  // 1) Convert now to epoch microseconds
+  uint64_t nowMicros = (uint64_t)now.tv_sec * MICROS_PER_SECOND + now.tv_usec;
+
+  // 2) Find today's midnight (UTC) in epoch micros
+  uint64_t midnightMicros = (uint64_t)(now.tv_sec - (now.tv_sec % 86400UL)) * MICROS_PER_SECOND;
+
+  // 3) Compute how many microseconds have elapsed since midnight
+  uint64_t microsToday = nowMicros - midnightMicros;
+
+  // 4) Compute next sample slot offset from midnight
+  uint64_t nextSlotToday = ((microsToday / samplingPeriodMicros) + 1ULL) * samplingPeriodMicros;
+
+  // 5) Compute absolute target timestamp (may naturally roll into next day)
+  uint64_t targetMicros = midnightMicros + nextSlotToday;
+
+  // 6) Return the wait time from now
+  return targetMicros - nowMicros;
+}
+
+// Sync DS1308 RTC time from ESP32 at next clean second boundary
+void syncRtcFromEsp32() {
+  time_t t1, t2;
+
+  // 1. Get initial time
+  t1 = time(nullptr);
+
+  // 2. Wait for the second to change
+  for(;;) {
+    t2 = time(nullptr);
+    if (t2 != t1) {
+      break;
+    }
+    delay(1);  // 1 ms polling. This doesn't need to be efficient.
   }
-  
-  return total_microseconds;
+
+  // 3. t2 is the first moment of the new second → sync RTC now
+  rtc.adjust(DateTime(t2));
 }
 
-// Sync DS1308 RTC time from ESP32
-void syncDS1308RTCFromESP32() {
-  // Get ESP32 time
-  time_t esp32_now;
-  esp32_now = time(nullptr);              
+// Sync ESP32 time from DS1308 RTC at a clean second boundary
+void syncEsp32FromRtc() {
+  DateTime t1, t2;
 
-  // Convert ESP32 time_t (UTC) to DateTime object  
-  DateTime esp32_dt = DateTime(esp32_now);
+  // 1. Read initial RTC time
+  t1 = rtc.now();
 
-  // Set the RTC time
-  ds1308_rtc.adjust(esp32_dt);                     
-}
+  // 2. Wait for the RTC second to change
+  for(;;) {
+    t2 = rtc.now();
+    if (t2.second() != t1.second()) {
+      break;
+    }
+    delay(1);  // 1 ms polling. We need to poll as RTC time can only be seen at 1s resolution
+  }
 
-// Sync ESP32 time from DS1308 RTC
-void syncESP32FromDS1308RTC() {
-  // Get RTC time
-  DateTime rtc_dt = ds1308_rtc.now();
-  time_t rtc_now = rtc_dt.unixtime();
-
-  // Set ESP32 system time from DS1308 RTC
+  // 3. Sync ESP32 clock immediately after rollover
   struct timeval tv;
-  tv.tv_sec = rtc_now;
+  tv.tv_sec  = t2.unixtime();
   tv.tv_usec = 0;
-  settimeofday(&tv, NULL); // Set full datetime
+  settimeofday(&tv, nullptr);
 }
 
-void printUTCTimeISOWithMicros(const struct timeval &tv) {
+void printUtcTimeIsoMicros(const struct timeval& tv) {
   struct tm timeinfo;
-  char isoTime[40];
+  char buf[40];
   gmtime_r(&tv.tv_sec, &timeinfo);
-  strftime(isoTime, sizeof(isoTime), "%Y-%m-%dT%H:%M:%S", &timeinfo);
-  Serial.printf("%s.%06ldZ\n", isoTime, tv.tv_usec);
+  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &timeinfo);
+  Serial.printf("%s.%06ldZ\n", buf, tv.tv_usec);
 }
 
-void printUTCTimeISO(const time_t &now) {
+void printUtcTimeIso(const time_t& now) {
   struct tm timeinfo;
-  char isoTime[30];
+  char buf[30];
   gmtime_r(&now, &timeinfo);
-  strftime(isoTime, sizeof(isoTime), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
-  Serial.println(isoTime);
+  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+  Serial.println(buf);
 }
 
-void printLocalTime(const time_t &now) {
+void printLocalTime(const time_t& now) {
   struct tm timeinfo;
-  char isoTime[30];
+  char buf[30];
   localtime_r(&now, &timeinfo);
-  strftime(isoTime, sizeof(isoTime), "%Y-%m-%dT%H:%M:%S (local)", &timeinfo);
-  Serial.println(isoTime);
+  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S (local)", &timeinfo);
+  Serial.println(buf);
+}
+
+void printEsp32UtcTime() {
+  time_t now = time(nullptr);
+  Serial.print("ESP32      ");
+  printUtcTimeIso(now);
+}
+
+void printRtcUtcTime() {
+  DateTime rtcDt = rtc.now();
+  time_t rtcNow = rtcDt.unixtime();
+  Serial.print("DS1308 RTC ");
+  printUtcTimeIso(rtcNow);
 }
 
 // Arduino setup and loop functions
 // --------------------------------
 
 void setup() {
-    // Setup serial for serial monitor
-    Serial.begin(SERIAL_BAUD_RATE);
+  // Setup serial for serial monitor
+  Serial.begin(SERIAL_BAUD_RATE);
 
-    // Print program name
-    Serial.println("========================================");
-    Serial.println("  ESP32-C3 Data Logger");
-    Serial.println("========================================");
+  // Print program name
+  Serial.println("==============================================");
+  Serial.printf("ESP32-C3 Data Logger (bootCount = %llu)\n", bootCount);
+  Serial.println("==============================================");
 
-    // Initialize I2C for RTC
-    Serial.print("Initializing I2C (SDA=");
-    Serial.print(I2C_SDA_PIN);
-    Serial.print(", SCL=");
-    Serial.print(I2C_SCL_PIN);
-    Serial.print(") ...");
-    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-    Serial.println(" DONE");
+  // Initialize I2C for RTC
+  Serial.print("Initializing I2C (SDA=");
+  Serial.print(I2C_SDA_PIN);
+  Serial.print(", SCL=");
+  Serial.print(I2C_SCL_PIN);
+  Serial.print(") ...");
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Serial.println(" DONE");
 
-    // Initialize RTC
-    Serial.print("Initializing DS1308 RTC ...");
-    if (!ds1308_rtc.begin()) {
-        Serial.println(" FAILED!");
-        Serial.println("ERROR: Couldn't find RTC. Check wiring!");
-        while (1) delay(10);
-    } else {
-        while(!ds1308_rtc.isrunning()) {
-          Serial.print(".");
-          delay(1000);
-        }
+  // Initialize RTC
+  Serial.print("Initializing DS1308 RTC ...");
+  if (!rtc.begin()) {
+    Serial.println(" FAILED!");
+    Serial.println("ERROR: Couldn't find RTC. Check wiring!");
+    while (1) delay(10);
+  } else {
+    while (!rtc.isrunning()) {
+      Serial.print(".");
+      delay(1000);
     }
-    Serial.println(" DONE");
-    DateTime rtc_dt = ds1308_rtc.now();
-    time_t rtc_now = rtc_dt.unixtime();
-    Serial.print("DS1308 RTC ");
-    printUTCTimeISO(rtc_now);
+  }
+  Serial.println(" DONE");
 
+  DateTime rtcDt = rtc.now();
+  time_t rtcNow = rtcDt.unixtime();
+  Serial.print("DS1308 RTC ");
+  printUtcTimeIso(rtcNow);
+
+  // On the first boot, also scan for available WiFi hotspots for debugging purposes
+  if (bootCount == 0) {
     // Scan for available WiFi hotspots and check if the configured SSID is among them
     Serial.print("Scanning WiFi ...");
-    int n = WiFi.scanNetworks();
+    int networkCount = WiFi.scanNetworks();
     Serial.println(" DONE");
-    bool found_configured_ssid = false;
-    for (int i = 0; i < n; i++) {
-        bool is_configured_ssid = (strcmp(WiFi.SSID(i).c_str(), wifi_ssid) == 0);
-        found_configured_ssid = found_configured_ssid || is_configured_ssid;
-        Serial.printf("%d: %s  (%d dBm)  %s%s\n",
-            i,
-            WiFi.SSID(i).c_str(),
-            WiFi.RSSI(i),
-            (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "OPEN" : "SECURED",
-            (is_configured_ssid) ? "  Matches the configured SSID": ""
-        );
-    }
-    if (!found_configured_ssid) {
-        Serial.println("Warning: Configured WiFi SSID not found in scan.");
+
+    bool foundConfiguredSsid = false;
+    for (int i = 0; i < networkCount; i++) {
+      bool isConfigured = (strcmp(WiFi.SSID(i).c_str(), wifi_ssid) == 0);
+      foundConfiguredSsid |= isConfigured;
+      Serial.printf("%d: %s  (%d dBm)  %s%s\n",
+          i,
+          WiFi.SSID(i).c_str(),
+          WiFi.RSSI(i),
+          (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "OPEN" : "SECURED",
+          (isConfigured) ? "  Matches the configured SSID" : ""
+      );
     }
 
-    // Connect to the configured WiFi hotspot
-    Serial.printf("\nConnecting to %s ...", wifi_ssid);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(wifi_ssid, wifi_password);
-    WiFi.setTxPower(WIFI_POWER_8_5dBm);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
+    if (!foundConfiguredSsid) {
+      Serial.println("Warning: Configured WiFi SSID not found in scan.");
+    }
+  }
+
+  // Connect to the configured WiFi hotspot
+  Serial.printf("Connecting to %s ...", wifi_ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(wifi_ssid, wifi_password);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println(" DONE");
+  Serial.print("My local IP address is ");
+  Serial.println(WiFi.localIP());
+
+  // Get ESP32 and DS1308 RTC time from Internet upon first boot, otherwise get time from DS1308 RTC
+  if (bootCount == 0) {
+    Serial.println("First boot, let's get the time from Internet!");
+
+    // Get current time from NTP server and set time zone
+    Serial.print("Waiting for time sync ...");
+    time_t now = 0;
+    struct tm timeinfo;
+    configTzTime(time_zone, ntpServerPrimary, ntpServerSecondary);
+
+    for(;;) {
+        time(&now);
+        gmtime_r(&now, &timeinfo);
+        if (timeinfo.tm_year >= (2025 - 1900)) {
+          break;
+        }
         Serial.print(".");
+        delay(500);
     }
     Serial.println(" DONE");
-    Serial.print("My local IP address is ");
-    Serial.println(WiFi.localIP());
 
-    // Get ESP32 and DS1308 RTC time from Internet upon first boot, otherwise get time from DS1308 RTC
-    if (boot_count == 0) {
-      Serial.println("First boot, let's set the time from Internet!");
-      // Get current time from a Network Time Protocol (NTP) server and set time zone
-      Serial.print("Waiting for time sync ...");
-      time_t esp32_now = 0;
-      configTzTime(time_zone, ntpServer1, ntpServer2);
-      while (esp32_now == 0) {
-        Serial.print(".");
-        delay(500);
-        esp32_now = time(nullptr);
-      }
-      Serial.println(" DONE");
-      Serial.println("Time after sync from NTP server:");
-      Serial.print("ESP32      ");
-      printUTCTimeISO(esp32_now);
-      Serial.print("ESP32      ");
-      printLocalTime(esp32_now);
+    Serial.println("Time after sync from NTP server:");
+    Serial.print("ESP32      ");
+    printUtcTimeIso(now);
 
-      // Sync DS1308 RTC with ESP32 UTC time
-      Serial.print("\nSyncing DS1308 RTC from ESP32 ...");
-      syncDS1308RTCFromESP32();
-      Serial.println(" DONE");
-    } else {
-      Serial.println("It's not the first boot, DS1308 RTC has been keeping time.");
-      // Sync ESP32 UTC time with DS1308 RTC
-      // This only has 1 second accuracy and might not be needed if you just use DS1308 RTC time
-      Serial.print("\nSyncing ESP32 time from DS1308 RTC ...");
-      syncESP32FromDS1308RTC();
-      Serial.println(" DONE");
-      // Print nominal sensing time
-      Serial.print("Nominal timestamp ");
-      printUTCTimeISOWithMicros(wake_time);
-    }
+    // Sync DS1308 RTC with ESP32 UTC time
+    Serial.print("Syncing DS1308 RTC from ESP32 ...");
+    syncRtcFromEsp32();
+    Serial.println(" DONE");
 
-    // Print ESP32 time
-    {
-      time_t esp32_now = time(nullptr);
-      Serial.print("ESP32      ");
-      printUTCTimeISO(esp32_now);
-      Serial.print("           ");
-      printLocalTime(esp32_now);
-    }
-    
-    // Print RTC time
-    {
-      DateTime rtc_dt = ds1308_rtc.now();
-      time_t rtc_now = rtc_dt.unixtime();
-      Serial.print("DS1308 RTC ");
-      printUTCTimeISO(rtc_now);
-      Serial.print("           ");
-      printLocalTime(rtc_now);
-    }
+  } else {
+    Serial.println("It's not the first boot, DS1308 RTC has been keeping time.");
 
-    // Get current time with microsecond resolution
-    struct timeval current_time;
-    gettimeofday(&current_time, NULL);
-    
-    // Calculate sleep duration to wake at next even minute (UTC) with microsecond precision
-    unsigned long long sleep_microseconds = microsecondsUntilNextEvenMinute(current_time);
-    Serial.println("\n--- Deep Sleep Configuration ---");
-    Serial.print("Current UTC time: ");
-    printUTCTimeISOWithMicros(current_time);
-    Serial.printf("Sleep duration: %llu microseconds (%.6f seconds)\n", 
-                  sleep_microseconds, 
-                  sleep_microseconds / 1000000.0);
-    
-    // Calculate and print expected wake time
-    unsigned long long total_microseconds = 
-      (unsigned long long)current_time.tv_sec * uS_TO_S + 
-      current_time.tv_usec + 
-      sleep_microseconds;
-    wake_time.tv_sec = total_microseconds / uS_TO_S;
-    wake_time.tv_usec = total_microseconds % uS_TO_S;
-    Serial.print("Expected wake time (UTC): ");
-    printUTCTimeISOWithMicros(wake_time);
+    // Sync ESP32 UTC time with DS1308 RTC
+    // This only has 1 second accuracy and might not be needed if only RTC time is used
+    Serial.print("Syncing ESP32 time from DS1308 RTC ...");
+    syncEsp32FromRtc();
+    Serial.println(" DONE");
 
-    // Go to deep sleep for 5 seconds
-    boot_count++;  // Increment boot count before deep sleep
-    Serial.flush();  // Flush serial monitor
-    esp_sleep_enable_timer_wakeup(sleep_microseconds);  // Configure wake-up timer (time in microseconds)
-    esp_deep_sleep_start();  // Enter deep sleep
+    // Print nominal sensing time
+    Serial.print("Nominal timestamp ");
+    printUtcTimeIsoMicros(wakeTime);
+  }
+
+  // Print 
+  printEsp32UtcTime()
+  printRtcUtcTime()
+
+  // Get current time with microsecond resolution
+  struct timeval currentTime;
+  gettimeofday(&currentTime, NULL);
+
+  // Calculate sleep duration to wake at next sampling time
+  uint64_t sleepMicros = microsecondsUntilNextSample(currentTime, samplingPeriodMicros);
+
+  Serial.println("\n--- Deep Sleep Configuration ---");
+  Serial.print("Current UTC time: ");
+  printUtcTimeIsoMicros(currentTime);
+  Serial.printf("Sleep duration: %llu microseconds (%.6f seconds)\n",
+                sleepMicros,
+                sleepMicros / 1000000.0);
+
+  // Calculate and print expected wake time
+  uint64_t totalMicros =
+      (uint64_t)currentTime.tv_sec * MICROS_PER_SECOND +
+      currentTime.tv_usec +
+      sleepMicros;
+
+  wakeTime.tv_sec = totalMicros / MICROS_PER_SECOND;
+  wakeTime.tv_usec = totalMicros % MICROS_PER_SECOND;
+
+  Serial.print("Expected wake time (UTC): ");
+  printUtcTimeIsoMicros(wakeTime);
+
+  // Go to deep sleep
+  bootCount++;               // Increment boot count before sleep
+  Serial.flush();            // Flush serial monitor
+  esp_sleep_enable_timer_wakeup(sleepMicros);
+  esp_deep_sleep_start();
 }
 
 void loop() {
-    // Not used because in setup() we go to deep sleep and after waking up setup() is run again
+  // Not used because we enter deep sleep in setup()
 }
