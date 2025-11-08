@@ -178,6 +178,14 @@ Will sleep until 2025-11-08T14:34:00.000000Z
 * **Time sync fails**: Check internet connectivity and NTP server accessibility
 * **RTC time drift**: DS1308 accuracy depends on crystal quality and temperature. Adjust `rtcDriftPpm` or `allowedDriftSeconds` in the sketch to change NTP sync frequency.
 
+## Authors
+
+Olli Niemitalo (Olli.Niemitalo@hamk.fi)
+
+## Copyright
+
+Copyright 2025 HAMK Häme University of Applied Sciences
+
 ## License
 
 MIT License - See LICENSE file for details
