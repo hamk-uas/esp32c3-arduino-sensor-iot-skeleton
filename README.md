@@ -115,7 +115,7 @@ NTP sync scheduling is automatically computed: `syncInterval = allowedDriftSecon
 
 The system uses two time sources:
 
-- **DS1308 RTC**: Battery-backed external RTC for persistent timekeeping
+- **DS1308 RTC**: External RTC for persistent timekeeping
 - **ESP32 internal clock**: High-resolution timer sub-second precision
 
 **Sync strategy:**
@@ -211,6 +211,7 @@ LICENSE                         # MIT license
 
 * **WiFi power limiting**: WiFi power has been reduced by `WiFi.setTxPower(WIFI_POWER_8_5dBm);` [to go around an antenna design flaw](https://forum.arduino.cc/t/no-wifi-connect-with-esp32-c3-super-mini/1324046/13) in some early ESP32-C3 Super Mini modules.
 * **UTC linearity**: This implementation assumes that UTC time is continuous and linear. Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments might be tolerated by configuring a large enough maximum ppm drift.
+* **DS1308 vs. ESP32-C3 RTC**: The external DS1308 RTC could probably be replaced by the ESP32-C3 internal RTC, by adding an external 32768 Hz xtal for ESP32-C3.
 
 ## Authors
 
