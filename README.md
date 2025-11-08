@@ -86,15 +86,53 @@ NTP sync scheduling is automatically computed: `syncInterval = allowedDriftSecon
 
 ### Boot Sequence
 
-1. **Sensor reading**: First action on wake (`temperatureRead()`) to minimize timing errors
-2. **Serial initialization**: Setup serial monitor at 115200 baud
-3. **RTC initialization**: Connect to DS1308 via I²C and verify it's running
-4. **Data logging**: On other than the first boot (which is boot 0) print CSV data with nominal wake timestamp
-5. **WiFi scan**: On boot 0 only, scan and display available networks
-6. **WiFi connection**: Connect to configured network
-7. **Time synchronization**: NTP sync (scheduled boots) or RTC sync (other boots)
-8. **Timing diagnostics**: Calculate actual setup start time and update statistics
-9. **Sleep calculation**: Compute next wake time and enter deep sleep
+```mermaid
+flowchart TD
+    %% Nodes
+    A[Device Power-On or Wake from Deep Sleep] --> B[Sensor Reading: temperatureRead]
+    B --> C[Serial Initialization at 115200 baud]
+    C --> D[RTC Initialization: DS1308 via I2C and verify running]
+    D --> E{bootCount == 0?}
+    E -- Yes --> F[WiFi Scan and display available networks]
+    E -- No --> G[Skip WiFi Scan]
+    F --> H[Connect to Configured WiFi Network]
+    G --> H
+    H --> I{Time Synchronization?}
+    I -- Scheduled Boot for NTP --> J[NTP Sync and update RTC]
+    I -- Other Boot --> K[Sync ESP32 Time from RTC]
+    J --> L[Timing Diagnostics: compute setup start time and update its stats]
+    K --> L
+    L --> M{bootCount != 0?}
+    M -- Yes --> N[Data Logging: print CSV data with nominal wake timestamp]
+    M -- No --> O[Skip Data Logging]
+    N --> P[Sleep Calculation: compute next wake time and enter deep sleep]
+    O --> P
+    P --> A
+
+    %% Classes
+    classDef startEnd fill:#f9f,stroke:#333,stroke-width:2px,color:#000
+    classDef process fill:#bbf,stroke:#333,stroke-width:1px,color:#000
+    classDef decision fill:#fbf,stroke:#333,stroke-width:2px,color:#000
+
+    %% Assign classes
+    class A,P startEnd
+    class B,C,D,F,G,H,J,K,L,N,O process
+    class E,I,M decision
+```
+
+The ESP32-C3 Data Logger follows a structured sequence each time it wakes from power-on or deep sleep:
+
+1. **Sensor reading**: Immediately read temperature using `temperatureRead()` to minimize timing errors. Logging of the data is in step 8. This is a placeholder for your own sensor reading.
+2. **Serial initialization**:  Setup the serial monitor at 115200 baud for debugging and logging.
+3. **RTC initialization**: Initialize the DS1308 RTC via I²C and verify it is running.
+4. **WiFi scan**: On the first boot (bootCount = 0) only, scan for available networks and display them.
+5. **WiFi connection**: Connect to the configured WiFi network.
+6. **Time synchronization**  
+   - For scheduled boots (every N samples), sync ESP32 time via NTP and update RTC.  
+   - Otherwise, sync ESP32 time from the RTC.
+7. **Timing diagnostics**: Compute the actual setup start time and update timing statistics for drift diagnostics.
+8. **Data logging**: If this is not the first boot (bootCount ≠ 0), print CSV-formatted sensor data with the nominal wake timestamp. This is a placeholder for your own data logging.
+9. **Sleep calculation**: Compute the next wake time and enter deep sleep until the next sample.
 
 **Boot counter**: The `bootCount` variable persists across deep sleep in ESP32-C3 RTC memory and is incremented before each wake.
 
