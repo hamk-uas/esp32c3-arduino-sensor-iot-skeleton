@@ -114,7 +114,7 @@ The device prints:
 - Connection status
 - Sleep duration and expected wake time
 
-Example output (actual times and counts will differ):
+Example output:
 
 ```
 ============== ESP32-C3 Data Logger ==============
