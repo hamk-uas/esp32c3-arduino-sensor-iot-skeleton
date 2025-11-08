@@ -166,7 +166,7 @@ This schedule minimizes network access while maintaining accurate time.
 
 ## Serial Monitor Output
 
-Example output showing timing diagnostics:
+Example output:
 
 ```
 ============== ESP32-C3 Data Logger ==============
@@ -184,16 +184,16 @@ Will sleep until 2025-11-08T14:33:00.000000Z
 ============== ESP32-C3 Data Logger ==============
 Boot count: 1
 Initializing DS1308 RTC ... DONE, got time: 2025-11-08T14:33:03Z
------------------data logging-----------------
-time,temperature_esp32
-2025-11-08T14:33:00.000000Z,26.900000
-----------------------------------------------
 Compensated sample lag: 0.000056 seconds
 WiFi connecting to My Network ....... DONE, got local ip 192.168.178.58
 Boots remaining until NTP sync: 18
 Syncing ESP32 time from DS1308 RTC ... DONE
 Setup start time (estimated): 2025-11-08T14:32:59.952583Z
 Sample time shift from nominal (estimated): -0.047 seconds (mean: -0.047, RMS: 0.047)
+-----------------data logging-----------------
+time,temperature_esp32
+2025-11-08T14:33:00.000000Z,26.900000
+----------------------------------------------
 Current time:
 DS1308 RTC 2025-11-08T14:33:06Z
 ESP32      2025-11-08T14:33:06.002224Z
