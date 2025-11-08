@@ -4,7 +4,7 @@ A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling 
 
 ## Features
 
-- **Precise timing**: Sampling aligned to midnight UTC with millisecond-level time tracking
+- **UTC synchronous sampling**: Sampling aligned to midnight UTC with sub-second-level time tracking
 - **Power efficient**: Deep sleep between samples
 - **Reliable timekeeping**: DS1308 (DS1307-compatible) RTC maintains time across deep sleep cycles
 - **Smart time sync**: Scheduled NTP synchronization based on configured RTC drift and tolerance
