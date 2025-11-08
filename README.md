@@ -1,6 +1,6 @@
 # ESP32-C3 Data Logger
 
-A low-power data logger using ESP32-C3 Super Mini with DS1308 RTC, with sampling synchronized to Coordinated Universal Time (UTC). Suitable for sampling periods that are tens of seconds or longer. IoT data upload missing.
+A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling synchronized to Coordinated Universal Time (UTC). Suitable for sampling periods that are tens of seconds or longer. IoT data upload missing.
 
 ## Features
 
