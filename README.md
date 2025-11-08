@@ -8,7 +8,7 @@ A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling 
 - **Power efficient**: Deep sleep between samples
 - **Reliable timekeeping**: DS1308 (DS1307-compatible) RTC maintains time across deep sleep cycles
 - **Smart time sync**: Scheduled NTP synchronization based on configured RTC drift and tolerance
-- **WiFi connectivity**: Connects to configured network for NTP sync
+- **WiFi connectivity**: Connects to configured network for NTP sync (and data upload which is not yet implemented)
 - **Timing diagnostics**: Real-time tracking of sample time shift statistics (mean and RMS)
 - **Configurable**: Adjustable sampling period and drift compensation
 - **UTC vs. local time**: Sampling is based on UTC. Local time zone is configurable and current local time is available but unused
