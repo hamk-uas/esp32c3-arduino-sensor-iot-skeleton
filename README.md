@@ -122,7 +122,7 @@ flowchart TD
 
 The ESP32-C3 Data Logger follows a structured sequence each time it wakes from power-on or deep sleep:
 
-1. **Sensor reading**: Immediately read temperature using `temperatureRead()` to minimize timing errors. This is a placeholder for your own sensor reading. Logging of the data is in step 8. 
+1. **Sensor reading**: Immediately read temperature using `temperatureRead()` to minimize timing errors. Logging of the data is in step 8. This is a placeholder for your own sensor reading.
 2. **Serial initialization**:  Setup the serial monitor at 115200 baud for debugging and logging.
 3. **RTC initialization**: Initialize the DS1308 RTC via I²C and verify it is running.
 4. **WiFi scan**: On the first boot (bootCount = 0) only, scan for available networks and display them.
