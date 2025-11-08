@@ -140,6 +140,7 @@ void syncEsp32FromRtc() {
 }
 
 void formatUtcTimeIsoMicros(const struct timeval& tv, char* buf, size_t bufSize) {
+  if (!buf || bufSize < 28) return; // Need at least 27 chars + null terminator
   struct tm timeinfo;
   char tempBuf[40];
   gmtime_r(&tv.tv_sec, &timeinfo);
@@ -148,23 +149,27 @@ void formatUtcTimeIsoMicros(const struct timeval& tv, char* buf, size_t bufSize)
 }
 
 void formatUtcTimeIso(const time_t& now, char* buf, size_t bufSize) {
+  if (!buf || bufSize < 21) return; // Need at least 20 chars + null terminator
   struct tm timeinfo;
   gmtime_r(&now, &timeinfo);
   strftime(buf, bufSize, "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
 }
 
 void formatLocalTime(const time_t& now, char* buf, size_t bufSize) {
+  if (!buf || bufSize < 29) return; // Need at least 28 chars + null terminator
   struct tm timeinfo;
   localtime_r(&now, &timeinfo);
   strftime(buf, bufSize, "%Y-%m-%dT%H:%M:%S (local)", &timeinfo);
 }
 
 void getEsp32UtcTimeString(char* buf, size_t bufSize) {
+  if (!buf || bufSize < 21) return;
   time_t now = time(nullptr);
   formatUtcTimeIso(now, buf, bufSize);
 }
 
 void getRtcUtcTimeString(char* buf, size_t bufSize) {
+  if (!buf || bufSize < 21) return;
   DateTime rtcDt = rtc.now();
   time_t rtcNow = rtcDt.unixtime();
   formatUtcTimeIso(rtcNow, buf, bufSize);
@@ -202,10 +207,10 @@ void setup() {
       delay(500);
     }
   }
-  char timeStr[40];
-  getRtcUtcTimeString(timeStr, sizeof(timeStr));
-  Serial.print(" DONE, got time: ");  
-  Serial.println(timeStr);
+    char timeStr[40];
+    getRtcUtcTimeString(timeStr, sizeof(timeStr));
+    Serial.print(" DONE, got time: ");  
+    Serial.println(timeStr);
 
   // Log sensor data if not the first boot.
   if (bootCount != 0) {
@@ -260,7 +265,7 @@ void setup() {
 
   // Get ESP32 and DS1308 RTC time from Internet per NTP sync schedule
   // or if not scheduled for this boot, get ESP32 time from DS1308 RTC
-  if (bootCount % ntpSyncIntervalSamplingPeriods == 0 || rtcYear < 2025) {
+  if (bootCount % ntpSyncIntervalSamplingPeriods == 0) {
     // Sync ESP32 time from NTP
     Serial.print("Syncing time from NTP ...");
     time_t now = 0;
