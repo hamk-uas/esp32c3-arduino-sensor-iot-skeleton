@@ -52,22 +52,7 @@ Built-in ESP32 libraries (no installation needed):
 
 ### 3. Configure Secrets
 
-Create `esp32c3_data_logger/Secrets.h` with your WiFi credentials:
-
-```cpp
-#ifndef SECRETS_H
-#define SECRETS_H
-
-// WiFi credentials
-const char *wifi_ssid = "YOUR_WIFI_SSID";
-const char *wifi_password = "YOUR_WIFI_PASSWORD";
-
-// Time zone (affects local time display only, not UTC)
-// See https://raw.githubusercontent.com/nayarsystems/posix_tz_db/master/zones.csv
-const char *time_zone = "EET-2EEST,M3.5.0/3,M10.5.0/4";  // Example for Finland
-
-#endif // SECRETS_H
-```
+Create `esp32c3_data_logger/Secrets.h` by renaming `esp32c3_data_logger/Secrets.h.example` and configure your WiFi credentials there. You can also configure your time zone, but ESP32-C3 local time is not currently used for anything.
 
 ### 4. Upload and Monitor
 
