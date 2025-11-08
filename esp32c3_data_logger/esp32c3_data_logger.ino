@@ -139,43 +139,35 @@ void syncEsp32FromRtc() {
   }
 }
 
-void printUtcTimeIsoMicros(const struct timeval& tv) {
+void formatUtcTimeIsoMicros(const struct timeval& tv, char* buf, size_t bufSize) {
   struct tm timeinfo;
-  char buf[40];
+  char tempBuf[40];
   gmtime_r(&tv.tv_sec, &timeinfo);
-  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &timeinfo);
-  Serial.printf("%s.%06ldZ\n", buf, tv.tv_usec);
+  strftime(tempBuf, sizeof(tempBuf), "%Y-%m-%dT%H:%M:%S", &timeinfo);
+  snprintf(buf, bufSize, "%s.%06ldZ", tempBuf, tv.tv_usec);
 }
 
-void printUtcTimeIso(const time_t& now) {
+void formatUtcTimeIso(const time_t& now, char* buf, size_t bufSize) {
   struct tm timeinfo;
-  char buf[30];
   gmtime_r(&now, &timeinfo);
-  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
-  Serial.println(buf);
+  strftime(buf, bufSize, "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
 }
 
-void printLocalTime(const time_t& now) {
+void formatLocalTime(const time_t& now, char* buf, size_t bufSize) {
   struct tm timeinfo;
-  char buf[30];
   localtime_r(&now, &timeinfo);
-  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S (local)", &timeinfo);
-  Serial.println(buf);
+  strftime(buf, bufSize, "%Y-%m-%dT%H:%M:%S (local)", &timeinfo);
 }
 
-void printEsp32UtcTime() {
+void getEsp32UtcTimeString(char* buf, size_t bufSize) {
   time_t now = time(nullptr);
-  Serial.print("ESP32      ");
-  printUtcTimeIso(now);
+  formatUtcTimeIso(now, buf, bufSize);
 }
 
-void printRtcUtcTime(bool printName = true) {
+void getRtcUtcTimeString(char* buf, size_t bufSize) {
   DateTime rtcDt = rtc.now();
   time_t rtcNow = rtcDt.unixtime();
-  if (printName) {
-    Serial.print("DS1308 RTC ");
-  }
-  printUtcTimeIso(rtcNow);
+  formatUtcTimeIso(rtcNow, buf, bufSize);
 }
 
 // Arduino setup() and loop()
@@ -210,14 +202,12 @@ void setup() {
       delay(500);
     }
   }
-  if (bootCount != 0) {
-    Serial.print(" DONE, got time: ");  
-    printRtcUtcTime(false);
-  } else {
-    Serial.println(" DONE");  
-  }
+  char timeStr[40];
+  getRtcUtcTimeString(timeStr, sizeof(timeStr));
+  Serial.print(" DONE, got time: ");  
+  Serial.println(timeStr);
 
-  // Log sensor data if not the first boot
+  // Log sensor data if not the first boot.
   if (bootCount != 0) {
     struct tm timeinfo;
     char buf[40];
@@ -270,7 +260,7 @@ void setup() {
 
   // Get ESP32 and DS1308 RTC time from Internet per NTP sync schedule
   // or if not scheduled for this boot, get ESP32 time from DS1308 RTC
-  if (bootCount % ntpSyncIntervalSamplingPeriods == 0) {
+  if (bootCount % ntpSyncIntervalSamplingPeriods == 0 || rtcYear < 2025) {
     // Sync ESP32 time from NTP
     Serial.print("Syncing time from NTP ...");
     time_t now = 0;
@@ -287,14 +277,15 @@ void setup() {
     }
     Serial.println(" DONE");
     Serial.println("Current time:");
+    char timeStr[40];
+    formatUtcTimeIso(now, timeStr, sizeof(timeStr));
     Serial.print("ESP32      ");
-    printUtcTimeIso(now);
+    Serial.println(timeStr);
 
     // Sync DS1308 RTC from ESP32 UTC time
     Serial.print("Syncing DS1308 RTC from ESP32 ...");
     syncRtcFromEsp32();
     Serial.println(" DONE");
-
   } else {
     // Print time until next NTP sync
     uint32_t remainder = bootCount % ntpSyncIntervalSamplingPeriods;
@@ -308,8 +299,14 @@ void setup() {
 
   // Print time
   Serial.println("Current time:");
-  printEsp32UtcTime();
-  printRtcUtcTime();
+  char esp32TimeStr[40];
+  char rtcTimeStr[40];
+  getEsp32UtcTimeString(esp32TimeStr, sizeof(esp32TimeStr));
+  getRtcUtcTimeString(rtcTimeStr, sizeof(rtcTimeStr));
+  Serial.print("ESP32      ");
+  Serial.println(esp32TimeStr);
+  Serial.print("DS1308 RTC ");
+  Serial.println(rtcTimeStr);
 
   // Calculate deep sleep duration to wake at next sampling time
   struct timeval currentTime;
@@ -318,8 +315,10 @@ void setup() {
   uint64_t totalMicros = (uint64_t)currentTime.tv_sec * MICROS_PER_SECOND + currentTime.tv_usec + sleepMicros;
   nominalWakeTime.tv_sec = totalMicros / MICROS_PER_SECOND;
   nominalWakeTime.tv_usec = totalMicros % MICROS_PER_SECOND;
+  char wakeTimeStr[40];
+  formatUtcTimeIsoMicros(nominalWakeTime, wakeTimeStr, sizeof(wakeTimeStr));
   Serial.print("Will sleep until ");
-  printUtcTimeIsoMicros(nominalWakeTime);
+  Serial.println(wakeTimeStr);
   sleepMicros += adjustSleepSeconds*1e6f;
   if (sleepMicros < 0) {
     sleepMicros = 0;
