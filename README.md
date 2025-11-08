@@ -25,8 +25,10 @@ A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling 
 - ESP32-C3 Super Mini module
 - DS1308 RTC module connected via I²C to ESP32-C3
 - Pull-up resistors for I²C:
-  - 10kΩ on GPIO8 (SDA) - often already present on some modules
-  - 10kΩ on GPIO9 (SCL) - required if not present externally
+  - 10kΩ(?) on GPIO8 (SDA)
+  - 10kΩ(?) on GPIO9 (SCL)
+ 
+(To be honest I'm not sure about the value or the need for each pull-up resistor.)
 
 ## Pin Configuration
 
@@ -94,13 +96,13 @@ NTP sync scheduling is automatically computed: `syncInterval = allowedDriftSecon
 8. **Timing diagnostics**: Calculate actual setup start time and update statistics
 9. **Sleep calculation**: Compute next wake time and enter deep sleep
 
-**Boot counter**: The `bootCount` variable persists across deep sleep in ESP32-C3 RTC memory and increments on each wake.
+**Boot counter**: The `bootCount` variable persists across deep sleep in ESP32-C3 RTC memory and is incremented before each wake.
 
 ### Time Synchronization
 
 The system uses two time sources:
 
-- **DS1308 RTC**: Battery-backed external RTC for persistent timekeeping
+- **DS1308 RTC**: External RTC for persistent timekeeping
 - **ESP32 internal clock**: High-resolution timer sub-second precision
 
 **Sync strategy:**
@@ -196,6 +198,7 @@ LICENSE                         # MIT license
 
 * **WiFi power limiting**: WiFi power has been reduced by `WiFi.setTxPower(WIFI_POWER_8_5dBm);` [to go around an antenna design flaw](https://forum.arduino.cc/t/no-wifi-connect-with-esp32-c3-super-mini/1324046/13) in some early ESP32-C3 Super Mini modules.
 * **UTC linearity**: This implementation assumes that UTC time is continuous and linear. Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments might be tolerated by configuring a large enough maximum ppm drift.
+* **DS1308 vs. ESP32-C3 RTC**: The external DS1308 RTC could probably be replaced by the ESP32-C3 internal RTC, by adding an external 32768 Hz xtal for ESP32-C3.
 
 ## Authors
 
