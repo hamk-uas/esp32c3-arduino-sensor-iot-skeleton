@@ -2,8 +2,6 @@
 
 A low-power data logger using ESP32-C3 Super Mini with DS1308 RTC, with sampling synchronized to Coordinated Universal Time (UTC). Suitable for sampling periods of tens of seconds or more.
 
-Coordinated Universal Time (UTC) is used as reference time. Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments, if those are ever introduced, might be tolerated by configuring a large enough maximum ppm drift.
-
 ## Features
 
 - Configurable sampling period
@@ -100,6 +98,7 @@ Notes:
    - On scheduled boots (when `bootCount % ntpSyncIntervalSamplingPeriods == 0`) the ESP32 syncs time from NTP servers and then updates the DS1308 RTC from the ESP32 time.
    - On other boots the ESP32 synchronizes its time from the DS1308 RTC.
    - This schedule is calculated from the declared maximum RTC drift (`rtcDriftPpm`) and the allowed drift in seconds (`allowedDriftSeconds`) so NTP syncs occur only as frequently as needed.
+   - Jumps in UTC such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments, if those are ever introduced, might be tolerated by configuring a large enough maximum ppm drift.
 
 3. Logging and sleep:
    - If `bootCount != 0` the sketch prints a CSV line with the nominal wake timestamp and the sensor value (e.g. `time,temperature_esp32`).
