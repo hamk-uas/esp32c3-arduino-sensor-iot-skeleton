@@ -11,6 +11,14 @@ A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling 
 - **WiFi connectivity**: Connects to configured network for NTP sync
 - **Timing diagnostics**: Real-time tracking of sample time shift statistics (mean and RMS)
 - **Configurable**: Adjustable sampling period and drift compensation
+- **UTC vs. local time**: Sampling is based on UTC. Local time zone is configurable and current local time is available but unused
+
+## Missing features (TODO)
+
+- **WiFi connection timeout**: Add a configurable timeout
+- **SD card**: Add data logging to SD card
+- **Cloud upload**: Add data uploading to cloud (IoT)
+- **Data buffering**: Buffer data in ESP32-C3 RTC SRAM (or on SD card) for more sparse transfers
 
 ## Hardware Requirements
 
@@ -94,8 +102,8 @@ NTP sync scheduling is automatically computed: `syncInterval = allowedDriftSecon
 1. **Sensor reading**: First action on wake (`temperatureRead()`) to minimize timing errors
 2. **Serial initialization**: Setup serial monitor at 115200 baud
 3. **RTC initialization**: Connect to DS1308 via I²C and verify it's running
-4. **Data logging**: If not first boot, print CSV data with nominal wake timestamp
-5. **WiFi scan**: On first boot only, scan and display available networks
+4. **Data logging**: On other than the first boot (which is boot 0) print CSV data with nominal wake timestamp
+5. **WiFi scan**: On boot 0 only, scan and display available networks
 6. **WiFi connection**: Connect to configured network
 7. **Time synchronization**: NTP sync (scheduled boots) or RTC sync (other boots)
 8. **Timing diagnostics**: Calculate actual setup start time and update statistics
@@ -118,9 +126,6 @@ The system uses two time sources:
   - ESP32 syncs from DS1308 RTC at second boundary
 
 This schedule minimizes network access while maintaining accurate time.
-
-**UTC time reference:**
-Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments might be tolerated by configuring a large enough maximum ppm drift.
 
 ### Data Logging and Sleep
 
@@ -200,7 +205,12 @@ LICENSE                         # MIT license
   - Try commenting out: `WiFi.setTxPower(WIFI_POWER_8_5dBm);`
 * **Time sync fails**: Check internet connectivity and NTP server accessibility
 * **RTC time drift**: DS1308 accuracy depends on crystal quality and temperature. Adjust `rtcDriftPpm` or `allowedDriftSeconds` to change NTP sync frequency
-* **Timing inconsistencies**: Monitor the sample time shift statistics. Large RMS values may indicate issues with deep sleep wake timing or RTC stability
+* **Timing inconsistencies**: Ensure that both ESP32-C3 and the DS1308 RTC are continuously powered even over the deep sleep periods. Monitor the sample time shift statistics. Large RMS values may indicate issues with deep sleep wake timing or RTC stability
+
+## Technical details
+
+* **WiFi power limiting**: WiFi power has been reduced by `WiFi.setTxPower(WIFI_POWER_8_5dBm);` [to go around an antenna design flaw](https://forum.arduino.cc/t/no-wifi-connect-with-esp32-c3-super-mini/1324046/13) in some early ESP32-C3 Super Mini modules.
+* **UTC linearity**: This implementation assumes that UTC time is continuous and linear. Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments might be tolerated by configuring a large enough maximum ppm drift.
 
 ## Authors
 
