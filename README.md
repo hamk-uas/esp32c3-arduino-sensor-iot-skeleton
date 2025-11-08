@@ -123,34 +123,33 @@ Example output:
 ==============================================
 ESP32-C3 Data Logger (bootCount = 0)
 ==============================================
-Initializing DS1308 RTC ... DONE
+Initializing DS1308 RTC ... DONE, got time: 2025-11-08T12:24:54Z
 Scanning WiFi ... DONE
-0: Namulis-Papetti  (-48 dBm)  SECURED  Matches the configured SSID
-1: Yläkerta_Lehtinen  (-72 dBm)  SECURED
-2: Telianboksi_Lehtinen  (-78 dBm)  SECURED
+0: Namulis-Papetti  (-60 dBm)  SECURED  Matches the configured SSID
+1: #################  (-72 dBm)  SECURED
 WiFi connecting to Namulis-Papetti ....... DONE, got local ip 192.168.178.58
 Syncing time from NTP ...................................... DONE
 Current time:
-ESP32      2025-11-08T11:54:11Z
+ESP32      2025-11-08T12:25:16Z
 Syncing DS1308 RTC from ESP32 ... DONE
 Current time:
-ESP32      2025-11-08T11:54:12Z
-DS1308 RTC 2025-11-08T11:54:12Z
-Will sleep until 2025-11-08T11:54:30.000000Z
+ESP32      2025-11-08T12:25:17Z
+DS1308 RTC 2025-11-08T12:25:17Z
+Will sleep until 2025-11-08T12:25:30.000000Z
 ==============================================
 ESP32-C3 Data Logger (bootCount = 1)
 ==============================================
-Initializing DS1308 RTC ... DONE, got time: 2025-11-08T11:54:31Z
+Initializing DS1308 RTC ... DONE, got time: 2025-11-08T12:25:30Z
 time,temperature_esp32
-2025-11-08T11:54:30.000000Z,26.900000
-Compensated sample lag: 0.000079 seconds
+2025-11-08T12:25:30.000000Z,26.900000
+Compensated sample lag: 0.000065 seconds
 WiFi connecting to Namulis-Papetti ....... DONE, got local ip 192.168.178.58
 Boots remaining until NTP sync: 18
 Syncing ESP32 time from DS1308 RTC ... DONE
 Current time:
-ESP32      2025-11-08T11:54:34Z
-DS1308 RTC 2025-11-08T11:54:34Z
-Will sleep until 2025-11-08T11:55:00.000000Z
+ESP32      2025-11-08T12:25:34Z
+DS1308 RTC 2025-11-08T12:25:34Z
+Will sleep until 2025-11-08T12:26:00.000000Z
 ```
 
 ## Troubleshooting
