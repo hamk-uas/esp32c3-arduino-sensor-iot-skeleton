@@ -111,7 +111,7 @@ NTP sync scheduling is automatically computed: `syncInterval = allowedDriftSecon
 8. **Timing diagnostics**: Calculate actual setup start time and update statistics
 9. **Sleep calculation**: Compute next wake time and enter deep sleep
 
-**Boot counter**: The `bootCount` variable persists across deep sleep in ESP32-C3 RTC memory and increments on each wake.
+**Boot counter**: The `bootCount` variable persists across deep sleep in ESP32-C3 RTC memory and is incremented before each wake.
 
 ### Time Synchronization
 
