@@ -2,13 +2,16 @@
 
 A low-power data logger using ESP32-C3 Super Mini with DS1308 RTC for precise time-based sampling.
 
+Coordinated Universal Time (UTC) is used as referene time. Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC anyway, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments, if those are ever introduced, might be tolerated by configuring a large maximum ppm drift.
+
 ## Features
 
+- Configurable sampling period
+- Sampling aligned to midnight UTC
 - Deep sleep between samples for power efficiency
+- WiFi connectivity
 - NTP time sync on first boot
 - DS1308 RTC maintains time across deep sleep cycles
-- Configurable sampling intervals aligned to midnight UTC
-- WiFi connectivity with power management
 
 ## Hardware Requirements
 
