@@ -205,7 +205,7 @@ LICENSE                         # MIT license
   - Try commenting out: `WiFi.setTxPower(WIFI_POWER_8_5dBm);`
 * **Time sync fails**: Check internet connectivity and NTP server accessibility
 * **RTC time drift**: DS1308 accuracy depends on crystal quality and temperature. Adjust `rtcDriftPpm` or `allowedDriftSeconds` to change NTP sync frequency
-* **Timing inconsistencies**: Ensure that both ESP32-C3 and the DS1308 RTC are continuously powered even over the deep sleep periods. Monitor the sample time shift statistics. Large RMS values may indicate issues with deep sleep wake timing or RTC stability
+* **Timing inconsistencies**: Ensure that both ESP32-C3 and the DS1308 RTC are continuously powered, also over the deep sleep periods. Monitor the sample time shift statistics. Large RMS values may indicate issues with deep sleep wake timing or RTC stability
 
 ## Technical details
 
