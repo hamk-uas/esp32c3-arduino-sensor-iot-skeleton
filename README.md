@@ -25,8 +25,10 @@ A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling 
 - ESP32-C3 Super Mini module
 - DS1308 RTC module connected via I²C to ESP32-C3
 - Pull-up resistors for I²C:
-  - 10kΩ on GPIO8 (SDA) - often already present on some modules
-  - 10kΩ on GPIO9 (SCL) - required if not present externally
+  - 10kΩ(?) on GPIO8 (SDA)
+  - 10kΩ(?) on GPIO9 (SCL)
+ 
+(To be honest I'm not sure about the value or the need for each pull-up resistor.)
 
 ## Pin Configuration
 
