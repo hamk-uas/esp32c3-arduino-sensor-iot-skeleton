@@ -1,6 +1,6 @@
 # ESP32-C3 Data Logger
 
-A low-power data logger using ESP32-C3 Super Mini with DS1308 RTC for precise time-based sampling.
+A low-power data logger using ESP32-C3 Super Mini with DS1308 RTC, with sampling synchronized to Coordinated Universal Time (UTC). Suitable for sampling periods of tens of seconds or more.
 
 Coordinated Universal Time (UTC) is used as reference time. Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments, if those are ever introduced, might be tolerated by configuring a large enough maximum ppm drift.
 
@@ -117,44 +117,55 @@ The device prints:
 Example output (actual times and counts will differ):
 
 ```
-==============================================
-ESP32-C3 Data Logger (bootCount = 0)
-==============================================
-Initializing DS1308 RTC ... DONE, got time: 2025-11-08T12:46:01Z
+============== ESP32-C3 Data Logger ==============
+Boot count: 0
+Initializing DS1308 RTC ... DONE, got time: 2025-11-08T14:32:16Z
 Scanning WiFi ... DONE
-0: ############  (-76 dBm)  SECURED
-Warning: Configured WiFi SSID not found in scan.
-WiFi connecting to My-Wifi ...... DONE, got local ip 192.168.178.58
-Syncing time from NTP ........................................ DONE
-Current time:
-ESP32      2025-11-08T12:46:23Z
+0: Namulis-Papetti  (-48 dBm)  SECURED  Matches the configured SSID
+1: ############  (-74 dBm)  SECURED
+2: #############  (-86 dBm)  SECURED
+3: ##########  (-91 dBm)  SECURED
+WiFi connecting to Namulis-Papetti ....... DONE, got local ip 192.168.178.58
+Syncing time from NTP ......................................... DONE
 Syncing DS1308 RTC from ESP32 ... DONE
 Current time:
-ESP32      2025-11-08T12:46:24Z
-DS1308 RTC 2025-11-08T12:46:24Z
-Will sleep until 2025-11-08T12:46:30.000000Z
-==============================================
-ESP32-C3 Data Logger (bootCount = 1)
-==============================================
-Initializing DS1308 RTC ... DONE, got time: 2025-11-08T12:46:35Z
+DS1308 RTC 2025-11-08T14:32:41Z
+ESP32      2025-11-08T14:32:41.002675Z
+Will sleep until 2025-11-08T14:33:00.000000Z
+============== ESP32-C3 Data Logger ==============
+Boot count: 1
+Initializing DS1308 RTC ... DONE, got time: 2025-11-08T14:33:03Z
+-----------------data logging-----------------
 time,temperature_esp32
-2025-11-08T12:46:30.000000Z,27.900000
-Compensated sample lag: 0.000077 seconds
-WiFi connecting to My-Wifi ....... DONE, got local ip 192.168.178.58
+2025-11-08T14:33:00.000000Z,26.900000
+----------------------------------------------
+Compensated sample lag: 0.000056 seconds
+WiFi connecting to Namulis-Papetti ....... DONE, got local ip 192.168.178.58
 Boots remaining until NTP sync: 18
 Syncing ESP32 time from DS1308 RTC ... DONE
+Setup start time (estimated): 2025-11-08T14:32:59.952583Z
+Sample time shift from nominal (estimated): -0.047 seconds (mean: -0.047, RMS: 0.047)
 Current time:
-ESP32      2025-11-08T12:46:38Z
-DS1308 RTC 2025-11-08T12:46:38Z
-Will sleep until 2025-11-08T12:47:00.000000Z
-==============================================
-ESP32-C3 Data Logger (bootCount = 2)
-==============================================
-Initializing DS1308 RTC ... DONE, got time: 2025-11-08T12:47:02Z
+DS1308 RTC 2025-11-08T14:33:06Z
+ESP32      2025-11-08T14:33:06.002224Z
+Will sleep until 2025-11-08T14:33:30.000000Z
+============== ESP32-C3 Data Logger ==============
+Boot count: 2
+Initializing DS1308 RTC ... DONE, got time: 2025-11-08T14:33:32Z
+-----------------data logging-----------------
 time,temperature_esp32
-2025-11-08T12:47:00.000000Z,25.900000
-Compensated sample lag: 0.000072 seconds
-...
+2025-11-08T14:33:30.000000Z,25.900000
+----------------------------------------------
+Compensated sample lag: 0.000054 seconds
+WiFi connecting to Namulis-Papetti ....... DONE, got local ip 192.168.178.58
+Boots remaining until NTP sync: 17
+Syncing ESP32 time from DS1308 RTC ... DONE
+Setup start time (estimated): 2025-11-08T14:33:29.921571Z
+Sample time shift from nominal (estimated): -0.078 seconds (mean: -0.063, RMS: 0.065)
+Current time:
+DS1308 RTC 2025-11-08T14:33:35Z
+ESP32      2025-11-08T14:33:35.002267Z
+Will sleep until 2025-11-08T14:34:00.000000Z
 ```
 
 ## Troubleshooting

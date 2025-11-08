@@ -71,6 +71,11 @@ RTC_DS1307 rtc;
 // Boot count in ESP32-C3 RTC memory, value retained over deep sleep
 RTC_DATA_ATTR uint32_t bootCount = 0;
 
+// Statistics on sample time shifts (mean and root mean square)
+RTC_DATA_ATTR float meanSampleShiftSeconds = 0;
+RTC_DATA_ATTR uint32_t sampleCount = 0;
+RTC_DATA_ATTR float meanSquareSampleShiftSeconds = 0;
+
 // Planned wake time (no plan initially, fill with zeros)
 RTC_DATA_ATTR struct timeval nominalWakeTime = {0, 0};
 
@@ -138,7 +143,7 @@ void getTimeString(char* buf, size_t size, bool useRtc) {
 
 void setup() {
   // Read the sensor data first to minimize delays
-  uint64_t sensorReadLagMicros = esp_timer_get_time();
+  uint64_t espTimerAtSetupStart = esp_timer_get_time();
   float temperature = temperatureRead();
 
   // Setup serial monitor
@@ -146,9 +151,8 @@ void setup() {
   while (!Serial) delay(100);
 
   // Print program name
-  Serial.println("==============================================");
-  Serial.printf("ESP32-C3 Data Logger (bootCount = %" PRIu32 ")\n", bootCount);
-  Serial.println("==============================================");
+  Serial.println("============== ESP32-C3 Data Logger ==============");
+  Serial.printf("Boot count: %" PRIu32 "\n", bootCount);
 
   // Initialize RTC
   Serial.print("Initializing DS1308 RTC ...");
@@ -171,9 +175,11 @@ void setup() {
     char buf[40];
     formatTimeIso(nominalWakeTime.tv_sec, buf, sizeof(buf), nominalWakeTime.tv_usec);
     while (!Serial) delay(100);
+    Serial.println("-----------------data logging-----------------");
     Serial.println("time,temperature_esp32");
     Serial.printf("%s,%f\n", buf, temperature);
-    Serial.printf("Compensated sample lag: %.6f seconds\n", sensorReadLagMicros/1e6f + adjustSleepSeconds);
+    Serial.println("----------------------------------------------");
+    Serial.printf("Compensated sample lag: %.6f seconds\n", espTimerAtSetupStart/1e6f + adjustSleepSeconds);
   }
 
   // On the first boot, also scan for available WiFi hotspots for debugging purposes
@@ -224,11 +230,6 @@ void setup() {
     }
     Serial.println(" DONE");
     
-    char time[40];
-    formatTimeIso(now, time, sizeof(time));
-    Serial.println("Current time:");
-    Serial.printf("ESP32      %s\n", time);
-
     // Sync DS1308 RTC from ESP32 UTC time
     Serial.print("Syncing DS1308 RTC from ESP32 ...");
     syncRtcFromEsp32();
@@ -244,14 +245,42 @@ void setup() {
     syncEsp32FromRtc();
     Serial.println(" DONE");
   }
+  // Calculate when setup() actually started running
+  if (bootCount != 0) {
+    asm volatile("":::"memory");
+    struct timeval timeAtSetupStart;
+    uint64_t espTimerAtSync = esp_timer_get_time();
+    gettimeofday(&timeAtSetupStart, NULL);  // First get current time, then adjust backwards:
+    timeAtSetupStart.tv_sec -= (espTimerAtSync - espTimerAtSetupStart) / MICROS_PER_SECOND;
+    timeAtSetupStart.tv_usec -= (espTimerAtSync - espTimerAtSetupStart) % MICROS_PER_SECOND;
+    if (timeAtSetupStart.tv_usec < 0) {
+      timeAtSetupStart.tv_sec -= 1;
+      timeAtSetupStart.tv_usec += MICROS_PER_SECOND;
+    }
+    char setupStartTimeStr[40];
+    formatTimeIso(timeAtSetupStart.tv_sec, setupStartTimeStr, sizeof(setupStartTimeStr), timeAtSetupStart.tv_usec);
+    Serial.printf("Setup start time (estimated): %s\n", setupStartTimeStr);
+    float sampleShiftSeconds = (timeAtSetupStart.tv_sec - nominalWakeTime.tv_sec) + (timeAtSetupStart.tv_usec - nominalWakeTime.tv_usec) / 1e6f;
+sampleCount++;
+    float delta_mean = (sampleShiftSeconds - meanSampleShiftSeconds) / sampleCount;
+    meanSampleShiftSeconds = meanSampleShiftSeconds + delta_mean;
+    float sampleShiftSecondsSquare = sampleShiftSeconds * sampleShiftSeconds;
+    float delta_mean_sq = (sampleShiftSecondsSquare - meanSquareSampleShiftSeconds) / sampleCount;
+    meanSquareSampleShiftSeconds = meanSquareSampleShiftSeconds + delta_mean_sq;
+    float rmsSampleShiftSeconds = sqrtf(meanSquareSampleShiftSeconds);
+    Serial.printf("Sample time shift from nominal (estimated): %.3f seconds (mean: %.3f, RMS: %.3f)\n", sampleShiftSeconds, meanSampleShiftSeconds, rmsSampleShiftSeconds);
+  }
 
   // Print time
-  char esp32Time[40], rtcTime[40];
-  getTimeString(esp32Time, sizeof(esp32Time), false);
+  char rtcTime[40], esp32Time[40];
+  //Include microseconds in ESP32 time for debugging, do not use getTimeString
+  struct timeval now;
   getTimeString(rtcTime, sizeof(rtcTime), true);
+  gettimeofday(&now, NULL);
+  formatTimeIso(now.tv_sec, esp32Time, sizeof(esp32Time), now.tv_usec);
   Serial.println("Current time:");
-  Serial.printf("ESP32      %s\n", esp32Time);
   Serial.printf("DS1308 RTC %s\n", rtcTime);
+  Serial.printf("ESP32      %s\n", esp32Time);
 
   // Calculate deep sleep duration to wake at next sampling time
   struct timeval currentTime;
