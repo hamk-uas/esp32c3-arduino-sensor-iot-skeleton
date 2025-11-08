@@ -170,18 +170,6 @@ void setup() {
   getTimeString(timeStr, sizeof(timeStr), true);
   Serial.printf(" DONE, got time: %s\n", timeStr);
 
-  // Log sensor data if not the first boot
-  if (bootCount != 0) {
-    char buf[40];
-    formatTimeIso(nominalWakeTime.tv_sec, buf, sizeof(buf), nominalWakeTime.tv_usec);
-    while (!Serial) delay(100);
-    Serial.println("-----------------data logging-----------------");
-    Serial.println("time,temperature_esp32");
-    Serial.printf("%s,%f\n", buf, temperature);
-    Serial.println("----------------------------------------------");
-    Serial.printf("Compensated sample lag: %.6f seconds\n", espTimerAtSetupStart/1e6f + adjustSleepSeconds);
-  }
-
   // On the first boot, also scan for available WiFi hotspots for debugging purposes
   if (bootCount == 0) {
     Serial.print("Scanning WiFi ...");
@@ -245,7 +233,8 @@ void setup() {
     syncEsp32FromRtc();
     Serial.println(" DONE");
   }
-  // Calculate when setup() actually started running
+
+  // Calculate and print when setup() actually started running
   if (bootCount != 0) {
     asm volatile("":::"memory");
     struct timeval timeAtSetupStart;
@@ -269,6 +258,18 @@ sampleCount++;
     meanSquareSampleShiftSeconds = meanSquareSampleShiftSeconds + delta_mean_sq;
     float rmsSampleShiftSeconds = sqrtf(meanSquareSampleShiftSeconds);
     Serial.printf("Sample time shift from nominal (estimated): %.3f seconds (mean: %.3f, RMS: %.3f)\n", sampleShiftSeconds, meanSampleShiftSeconds, rmsSampleShiftSeconds);
+  }
+
+  // Log sensor data if not the first boot
+  if (bootCount != 0) {
+    char buf[40];
+    formatTimeIso(nominalWakeTime.tv_sec, buf, sizeof(buf), nominalWakeTime.tv_usec);
+    while (!Serial) delay(100);
+    Serial.println("-----------------data logging-----------------");
+    Serial.println("time,temperature_esp32");
+    Serial.printf("%s,%f\n", buf, temperature);
+    Serial.println("----------------------------------------------");
+    Serial.printf("Compensated sample lag: %.6f seconds\n", espTimerAtSetupStart/1e6f + adjustSleepSeconds);
   }
 
   // Print time
