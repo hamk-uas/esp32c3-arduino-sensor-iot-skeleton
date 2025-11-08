@@ -10,6 +10,8 @@ A low-power data logger using ESP32-C3 Super Mini with DS1308 RTC, with sampling
 - WiFi connectivity
 - DS1308 (DS1307-compatible) RTC maintains time across deep sleep cycles
 - NTP time sync on scheduled boots (based on configured RTC ppm drift and configured allowed drift in seconds)
+- Real-time tracking of sample time shift statistics (mean and RMS deviation from nominal wake times)
+- Estimated setup start time calculation for accurate timing diagnostics
 
 ## Hardware Requirements
 
@@ -102,15 +104,18 @@ Notes:
 
 3. Logging and sleep:
    - If `bootCount != 0` the sketch prints a CSV line with the nominal wake timestamp and the sensor value (e.g. `time,temperature_esp32`).
+   - The sketch calculates when setup() actually started running by working backwards from the current time using ESP32's `esp_timer_get_time()`.
+   - Sample time shift statistics (mean and RMS) are tracked across boots to monitor timing accuracy.
    - The sketch computes the next sampling slot aligned to midnight UTC, applies `adjustSleepSeconds` compensation, and then enters deep sleep until that exact microsecond-aligned wake time.
 
 ## Serial Monitor Output
 
 The device prints:
 - Boot count and wake timestamps
-- RTC and ESP32 time comparisons
+- RTC and ESP32 time comparisons (including microseconds for ESP32)
 - WiFi scan results (first boot only)
 - Connection status
+- Estimated setup start time and sample time shift statistics
 - Sleep duration and expected wake time
 
 Example output:
@@ -166,6 +171,11 @@ DS1308 RTC 2025-11-08T14:33:35Z
 ESP32      2025-11-08T14:33:35.002267Z
 Will sleep until 2025-11-08T14:34:00.000000Z
 ```
+
+The sample time shift statistics help monitor timing accuracy:
+- **Sample time shift**: Difference between actual setup start time and nominal wake time
+- **Mean**: Running average of sample time shifts across all boots
+- **RMS**: Root mean square of sample time shifts, indicating overall timing variation
 
 ## Troubleshooting
 
