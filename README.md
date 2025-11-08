@@ -65,6 +65,8 @@ const char *time_zone = "EET-2EEST,M3.5.0/3,M10.5.0/4";  // Example for Finland
 
 Open `esp32c3_data_logger/esp32c3_data_logger.ino` in Arduino IDE, upload to your ESP32-C3, and monitor the serial output at 115200 baud.
 
+During operation of the sketch, ESP32-C3 goes to deep sleep for tens of seconds at a time. This prevents further uploads. To enable another upload, press and release the ESP32-C3 Super mini in sequence: reset down, boot down, reset up, boot up. This also stops the serial monitor from stealing focus upon ESP32-C3 wakeup from deep sleep.
+
 ## Configuration
 
 ### Adjusting Sampling Interval
