@@ -83,7 +83,100 @@ NTP sync scheduling is automatically computed: `syncInterval = allowedDriftSecon
 
 ## How It Works
 
-### Boot Sequence
+### Boot Sequence (timings illustrative)
+
+```mermaid
+gantt
+    title First boot
+
+    dateFormat ms
+    axisFormat 00:%M:%S
+
+    section Power-on
+    ESP startup and Arduino init        :wake, 2026-01-02T00:00:00, 1s
+
+    section setup() start
+    Read sensor (data will be discarded)  :sensor, after wake, 1s
+
+    section WiFi and time
+    RTC init                            :rtc, after sensor, 2s
+    Wi-Fi scan (for debugging)          :wifiscan, after rtc, 2s
+    Wi-Fi connect                       :wifi, after wifiscan, 3s
+    Sync ESP time from NTP              :ntp, after wifi, 15s
+    Sync RTC time from ESP              :rtcu, after ntp, 1s
+
+    section Sleep
+    Schedule next wakeup                :sleepcalc, after rtcu, 1s
+    Deep Sleep                          :sleep, after sleepcalc, 33s
+```
+
+```mermaid
+gantt
+    title Regular boot
+
+    dateFormat ms
+    axisFormat 00:%M:%S
+
+    section Wake
+    ESP wake and Arduino init   :wake, 2026-01-01T00:00:59, 1s
+
+    section setup() start
+    Read sensor                      :sensor, after wake, 1s
+
+    section WiFi and time
+    RTC init                         :rtc, after sensor, 2s
+    Sync ESP time from RTC           :espsync, after rtc, 1s
+
+    section Logging
+    Log data                         :log, after espsync, 1s
+
+    section Sleep
+    Schedule next wakeup             :sleepcalc, after log, 1s
+    Deep Sleep                       :sleep, after sleepcalc, 53s
+```
+
+```mermaid
+gantt
+    title Every Nth boot
+
+    dateFormat ms
+    axisFormat 00:%M:%S
+
+    section Wake
+    ESP wake and Arduino init   :wake, 2026-01-01T00:01:59, 1s
+
+    section setup() start
+    Read sensor                      :sensor, after wake, 1s
+
+    section WiFi and time
+    RTC init                         :rtc, after sensor, 2s
+    Wi-Fi connect                    :wifi, after rtc, 3s
+    Sync ESP time from NTP           :ntp, after wifi, 15s
+    Sync RTC time from ESP           :rtcu, after ntp, 1s
+
+    section Logging
+    Log data                         :log, after rtcu, 1s
+
+    section Sleep
+    Schedule next wakeup             :sleepcalc, after log, 1s
+    Deep Sleep                       :sleep, after sleepcalc, 23s
+```
+
+The ESP32-C3 Data Logger follows a structured sequence each time it wakes from power-on or deep sleep:
+
+1. **Sensor reading**: Immediately read temperature using `temperatureRead()` to minimize timing errors. Logging of the data is in step 8. This is a placeholder for your own sensor reading.
+2. **Serial initialization**:  Setup the serial monitor at 115200 baud for debugging and logging.
+3. **RTC initialization**: Initialize the DS1308 RTC via I²C and verify it is running.
+4. **WiFi scan**: On the first boot (bootCount = 0) only, scan for available networks and display them.
+5. **WiFi connection**: Connect to the configured WiFi network.
+6. **Time synchronization**  
+   - For scheduled boots (every N samples), sync ESP32 time via NTP and update RTC.  
+   - Otherwise, sync ESP32 time from the RTC.
+7. **Timing diagnostics**: Compute the actual setup start time and update timing statistics for drift diagnostics.
+8. **Data logging**: If this is not the first boot (bootCount ≠ 0), print CSV-formatted sensor data with the nominal wake timestamp. This is a placeholder for your own data logging.
+9. **Sleep calculation**: Compute the next wake time and enter deep sleep until the next sample.
+
+**Boot counter**: The `bootCount` variable persists over deep sleep in ESP32-C3 RTC memory and is incremented just before deep sleep.
 
 ```mermaid
 flowchart TD
@@ -118,22 +211,6 @@ flowchart TD
     class B,C,D,F,G,H,J,K,L,N,O process
     class E,I,M decision
 ```
-
-The ESP32-C3 Data Logger follows a structured sequence each time it wakes from power-on or deep sleep:
-
-1. **Sensor reading**: Immediately read temperature using `temperatureRead()` to minimize timing errors. Logging of the data is in step 8. This is a placeholder for your own sensor reading.
-2. **Serial initialization**:  Setup the serial monitor at 115200 baud for debugging and logging.
-3. **RTC initialization**: Initialize the DS1308 RTC via I²C and verify it is running.
-4. **WiFi scan**: On the first boot (bootCount = 0) only, scan for available networks and display them.
-5. **WiFi connection**: Connect to the configured WiFi network.
-6. **Time synchronization**  
-   - For scheduled boots (every N samples), sync ESP32 time via NTP and update RTC.  
-   - Otherwise, sync ESP32 time from the RTC.
-7. **Timing diagnostics**: Compute the actual setup start time and update timing statistics for drift diagnostics.
-8. **Data logging**: If this is not the first boot (bootCount ≠ 0), print CSV-formatted sensor data with the nominal wake timestamp. This is a placeholder for your own data logging.
-9. **Sleep calculation**: Compute the next wake time and enter deep sleep until the next sample.
-
-**Boot counter**: The `bootCount` variable persists across deep sleep in ESP32-C3 RTC memory and is incremented before each wake.
 
 ### Time Synchronization
 
