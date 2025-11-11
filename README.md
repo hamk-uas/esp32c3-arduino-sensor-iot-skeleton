@@ -159,7 +159,7 @@ gantt
 
     section Sleep
     Schedule next wakeup             :sleepcalc, after log, 1s
-    Deep Sleep                       :sleep, after sleepcalc, 23s
+    Deep Sleep                       :sleep, after sleepcalc, 35s
 ```
 
 The ESP32-C3 Data Logger follows a structured sequence each time it wakes from power-on or deep sleep:
