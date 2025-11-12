@@ -41,7 +41,7 @@ A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling 
 ```
 esp32c3_data_logger/
 ├── esp32c3_data_logger.ino     # Main sketch
-├── Secrets.h                   # WiFi and timezone configuration (you create this)
+├── Secrets.h                   # WiFi, timezone, and ThingSpeak configuration (you create this)
 └── Secrets.h.example           # A template you can use for creating Secrets.h
 README.md                       # This file
 LICENSE                         # MIT license
