@@ -1,23 +1,23 @@
 # ESP32-C3 Data Logger
 
-A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling synchronized to Coordinated Universal Time (UTC). Suitable for sampling periods that are tens of seconds or longer. IoT data upload missing.
+A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling synchronized to Coordinated Universal Time (UTC). Suitable for sampling periods that are 20 seconds or longer.
 
 ## Features
 
-- **UTC synchronous sampling**: Sampling aligned to midnight UTC with sub-second-level time tracking. Local time zone is configurable but does not affect sampling
+- **UTC synchronous sampling**: Configurable sampling period with sampling aligned to midnight UTC. Sub-second-level time tracking. Local time zone is configurable but does not affect sampling
 - **Power efficient**: Deep sleep between samples
 - **Reliable timekeeping**: DS1308 (DS1307-compatible) RTC maintains time across deep sleep cycles
 - **Smart time sync**: Scheduled NTP synchronization based on configured RTC drift and tolerance
-- **WiFi connectivity**: Connects to configured network for NTP sync (and data upload which is not yet implemented)
+- **Wakeup latency compensation**: Configurable ESP32-C3 wakeup latency compensation
+- **WiFi connectivity**: Connects to configured network for NTP sync and data logging to cloud
 - **Timing diagnostics**: Real-time tracking of sample time shift statistics (mean and RMS)
-- **Configurable**: Adjustable sampling period and drift compensation
+- **IoT data upload**: Data logging to cloud (ThingSpeak) with multi-field HTTP JSON POST request
 
 ## Missing features (TODO)
 
 - **WiFi connection timeout**: Add a configurable timeout
 - **SD card**: Add data logging to SD card
-- **Cloud upload**: Add data uploading to cloud (IoT)
-- **Data buffering**: Buffer data in ESP32-C3 RTC SRAM (or on SD card) for more sparse transfers
+- **Data buffering**: Buffer data in ESP32-C3 RTC SRAM (or on SD card) for more sparse logging
 
 ## Hardware Requirements
 
@@ -36,6 +36,17 @@ A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling 
 | DS1308 RTC | I²C SDA | GPIO8 |
 | DS1308 RTC | I²C SCL | GPIO9 |
 
+## Project Structure
+
+```
+esp32c3_data_logger/
+├── esp32c3_data_logger.ino     # Main sketch
+├── Secrets.h                   # WiFi and timezone configuration (you create this)
+└── Secrets.h.example           # A template you can use for creating Secrets.h
+README.md                       # This file
+LICENSE                         # MIT license
+```
+
 ## Getting Started
 
 ### 1. Setup Arduino IDE
@@ -44,18 +55,32 @@ Follow the [Getting Started with the ESP32-C3 Super Mini](https://randomnerdtuto
 
 ### 2. Install Required Libraries
 
-Install via Arduino Library Manager:
+Install with dependencies via Arduino Library Manager:
 
 - `RTClib` by Adafruit (v2.1.1+)
 
-Built-in ESP32 libraries (no installation needed):
-- `WiFi.h`, `time.h`, `esp_sntp.h`, `Wire.h`
+Built-in ESP32 libraries:
+
+- `WiFi.h`
+- `time.h`
+- `esp_sntp.h`
+- `Wire.h`
+- `HTTPClient.h`
 
 ### 3. Configure Secrets
 
-Create `esp32c3_data_logger/Secrets.h` by renaming `esp32c3_data_logger/Secrets.h.example` and configure your WiFi credentials there. You can also configure your time zone, but ESP32-C3 local time is not currently used for anything.
+Create `esp32c3_data_logger/Secrets.h` by renaming `esp32c3_data_logger/Secrets.h.example` and configure your WiFi and ThingSpeak API credentials (see the next subsection) there. You can also configure your time zone, but ESP32-C3 local time is not currently used for anything.
 
-### 4. Upload and Monitor
+### 4. ThingSpeak Configuration
+
+ThingSpeak example:
+
+1. Create a ThingSpeak channel at https://thingspeak.com
+2. Configure 1 field:
+   - Field 1: Temperature (°C)
+3. Copy your Write API Key to Secrets.h
+
+### 5. Upload and Monitor
 
 Open `esp32c3_data_logger/esp32c3_data_logger.ino` in Arduino IDE, upload to your ESP32-C3, and monitor the serial output at 115200 baud.
 
@@ -84,6 +109,8 @@ NTP sync scheduling is automatically computed: `syncInterval = allowedDriftSecon
 ## How It Works
 
 ### Boot Sequence (timings illustrative)
+
+The sequence of tasks on each boot depends on whether it is the first boot (power-on), an Nth boot with a scheduled NTC sync, or a regular boot from deep sleep:
 
 ```mermaid
 gantt
@@ -128,11 +155,11 @@ gantt
     Sync ESP time from RTC           :espsync, after rtc, 1s
 
     section Logging
-    Log data                         :log, after espsync, 1s
+    Log data                         :log, after espsync, 2s
 
     section Sleep
     Schedule next wakeup             :sleepcalc, after log, 1s
-    Deep Sleep                       :sleep, after sleepcalc, 53s
+    Deep Sleep                       :sleep, after sleepcalc, 52s
 ```
 
 ```mermaid
@@ -155,14 +182,14 @@ gantt
     Sync RTC time from ESP           :rtcu, after ntp, 1s
 
     section Logging
-    Log data                         :log, after rtcu, 1s
+    Log data                         :log, after rtcu, 2s
 
     section Sleep
     Schedule next wakeup             :sleepcalc, after log, 1s
-    Deep Sleep                       :sleep, after sleepcalc, 35s
+    Deep Sleep                       :sleep, after sleepcalc, 34s
 ```
 
-The ESP32-C3 Data Logger follows a structured sequence each time it wakes from power-on or deep sleep:
+The detailed boot count conditional boot sequence:
 
 1. **Sensor reading**: Immediately read temperature using `temperatureRead()` to minimize timing errors. Logging of the data is in step 8. This is a placeholder for your own sensor reading.
 2. **Serial initialization**:  Setup the serial monitor at 115200 baud for debugging and logging.
@@ -173,10 +200,12 @@ The ESP32-C3 Data Logger follows a structured sequence each time it wakes from p
    - For scheduled boots (every N samples), sync ESP32 time via NTP and update RTC.  
    - Otherwise, sync ESP32 time from the RTC.
 7. **Timing diagnostics**: Compute the actual setup start time and update timing statistics for drift diagnostics.
-8. **Data logging**: If this is not the first boot (bootCount ≠ 0), print CSV-formatted sensor data with the nominal wake timestamp. This is a placeholder for your own data logging.
+8. **Data logging**: If this is not the first boot (bootCount ≠ 0), print CSV-formatted sensor data with the nominal timestamp. Send sensor data to ThingSpeak with the nominal timestamp.
 9. **Sleep calculation**: Compute the next wake time and enter deep sleep until the next sample.
 
 **Boot counter**: The `bootCount` variable persists over deep sleep in ESP32-C3 RTC memory and is incremented just before deep sleep.
+
+The same as a flowchart:
 
 ```mermaid
 flowchart TD
@@ -217,7 +246,7 @@ flowchart TD
 The system uses two time sources:
 
 - **DS1308 RTC**: External RTC for persistent timekeeping
-- **ESP32 internal clock**: High-resolution timer sub-second precision
+- **ESP32 internal clock**: High-resolution timer with sub-second precision
 
 **Sync strategy:**
 - On scheduled boots (`bootCount % ntpSyncIntervalSamplingPeriods == 0`):
@@ -228,16 +257,16 @@ The system uses two time sources:
 
 This schedule minimizes network access while maintaining accurate time.
 
-### Data Logging and Sleep
+### Data Logging, Diagnostics, and Sleep
 
-1. **Logging**: Prints CSV data with nominal wake timestamp and sensor value (from boot count 1 onwards)
+1. **Logging**: Prints CSV data with nominal timestamp and sensor value (from boot count 1 onwards)
 2. **Timing diagnostics**: 
    - Calculates actual setup() start time by working backwards from current time using `esp_timer_get_time()`
-   - Calculates sample time shift (difference between actual and nominal wake times)
-   - Updates running statistics using Welford's online algorithm: mean and mean square
+   - Calculates sample time shift (difference between actual and nominal wake times) using the above and the ESP32-C3 time synced from DS1308 RTC.
+   - Updates running statistics of the time shift using Welford's online algorithm: mean and mean square
    - Displays shift, mean, and RMS (square root of mean square)
    - Statistics persist in RTC memory across boots
-3. **Next wake calculation**: Computes next sampling slot aligned to midnight UTC
+3. **Next wake calculation**: Computes next sampling slot with the sampling time grid aligned to midnight UTC
 4. **Deep sleep**: Applies `adjustSleepSeconds` compensation and sleeps until next sample
 
 ## Serial Monitor Output
@@ -245,56 +274,55 @@ This schedule minimizes network access while maintaining accurate time.
 Example output:
 
 ```
-============== ESP32-C3 Data Logger ==============
-Boot count: 0
-Initializing DS1308 RTC ... DONE, got time: 2025-11-08T14:32:16Z
-Scanning WiFi ... DONE
-0: My Network (-48 dBm)  SECURED  Matches the configured SSID
-WiFi connecting to My Network ....... DONE, got local ip 192.168.178.58
-Syncing time from NTP ......................................... DONE
-Syncing DS1308 RTC from ESP32 ... DONE
-Current time:
-DS1308 RTC 2025-11-08T14:32:41Z
-ESP32      2025-11-08T14:32:41.002675Z
-Will sleep until 2025-11-08T14:33:00.000000Z
-============== ESP32-C3 Data Logger ==============
-Boot count: 1
-Initializing DS1308 RTC ... DONE, got time: 2025-11-08T14:33:03Z
-Compensated sample lag: 0.000056 seconds
-WiFi connecting to My Network ....... DONE, got local ip 192.168.178.58
-Boots remaining until NTP sync: 18
-Syncing ESP32 time from DS1308 RTC ... DONE
-Setup start time (estimated): 2025-11-08T14:32:59.952583Z
-Sample time shift from nominal (estimated): -0.047 seconds (mean: -0.047, RMS: 0.047)
------------------data logging-----------------
-time,temperature_esp32
-2025-11-08T14:33:00.000000Z,26.900000
-----------------------------------------------
-Current time:
-DS1308 RTC 2025-11-08T14:33:06Z
-ESP32      2025-11-08T14:33:06.002224Z
-Will sleep until 2025-11-08T14:33:30.000000Z
-```
-
-### Understanding Timing Diagnostics
-
-- **Compensated sample lag**: Total delay from wakeup to sensor reading, including `adjustSleepSeconds` compensation
-- **Setup start time (estimated)**: When setup() began execution, calculated by subtracting `esp_timer_get_time()` from current time after time sync
-- **Sample time shift**: Difference between actual setup start time and nominal wake time
-  - **Mean**: Running average across all samples (from boot 1 onwards) - indicates systematic timing bias
-  - **RMS**: Root mean square of shifts - indicates overall timing variation/jitter
-  - Statistics use Welford's online algorithm for numerical stability
-
-Note: Statistics are only calculated and displayed from boot count 1 onwards (after the first wake).
-
-## Project Structure
-
-```
-esp32c3_data_logger/
-├── esp32c3_data_logger.ino     # Main sketch
-└── Secrets.h                   # WiFi and timezone configuration (you create this)
-README.md                       # This file
-LICENSE                         # MIT license
+10:11:56.243 -> ============== ESP32-C3 Data Logger ==============
+10:11:56.243 -> Boot count: 0
+10:11:56.243 -> Initializing DS1308 RTC ... DONE, got time: 2000-01-01T00:01:13Z
+10:11:56.243 -> Scanning WiFi ... DONE
+10:11:58.871 -> 0: OnePlus 13 2EAA  (-57 dBm)  SECURED  Matches the configured SSID
+10:11:58.871 -> 1: moto7  (-73 dBm)  SECURED
+10:11:58.871 -> WiFi connecting to OnePlus 13 2EAA ....... DONE, got local ip 10.48.8.100
+10:12:00.851 -> Syncing time from NTP ....... DONE
+10:12:02.889 -> Syncing DS1308 RTC from ESP32 ... DONE
+10:12:03.662 -> Current time:
+10:12:03.662 -> DS1308 RTC 2025-11-12T08:12:05Z
+10:12:03.662 -> ESP32      2025-11-12T08:12:05.003068Z
+10:12:03.662 -> Will sleep until 2025-11-12T08:12:30.000000Z
+10:12:29.641 -> ============== ESP32-C3 Data Logger ==============
+10:12:29.641 -> Boot count: 1
+10:12:29.641 -> Initializing DS1308 RTC ... DONE, got time: 2025-11-12T08:12:30Z
+10:12:29.641 -> WiFi connecting to OnePlus 13 2EAA ...... DONE, got local ip 10.48.8.100
+10:12:31.176 -> Boots remaining until NTP sync: 18
+10:12:31.176 -> Syncing ESP32 time from DS1308 RTC ... DONE
+10:12:31.676 -> Setup start time (estimated): 2025-11-12T08:12:29.861684Z
+10:12:31.676 -> Sample time shift from nominal (estimated): -0.138 seconds (mean: -0.138, RMS: 0.138)
+10:12:31.676 -> -----------------data logging-----------------
+10:12:31.676 -> time,temperature_esp32
+10:12:31.676 -> 2025-11-12T08:12:30.000000Z,24.900000
+10:12:31.676 -> ----------------------------------------------
+10:12:31.676 -> Compensated sample lag: 0.000183 seconds
+10:12:31.676 -> Posting to cloud ... DONE (HTTP 200, response: {"channel_id":3160355,"created_at":"2025-11-12T08:12:30Z","entry_id":1,"field1":24.9,"field2":null,"field3":null,"field4":null,"field5":null,"field6":null,"field7":null,"field8":null,"latitude":null,"longitude":null,"elevation":null,"status":null})
+10:12:33.645 -> Current time:
+10:12:33.645 -> DS1308 RTC 2025-11-12T08:12:34Z
+10:12:33.645 -> ESP32      2025-11-12T08:12:34.982826Z
+10:12:33.645 -> Will sleep until 2025-11-12T08:13:00.000000Z
+10:12:59.484 -> ============== ESP32-C3 Data Logger ==============
+10:12:59.484 -> Boot count: 2
+10:12:59.484 -> Initializing DS1308 RTC ... DONE, got time: 2025-11-12T08:13:00Z
+10:12:59.484 -> WiFi connecting to OnePlus 13 2EAA ...... DONE, got local ip 10.48.8.100
+10:13:01.018 -> Boots remaining until NTP sync: 17
+10:13:01.018 -> Syncing ESP32 time from DS1308 RTC ... DONE
+10:13:01.686 -> Setup start time (estimated): 2025-11-12T08:12:59.818689Z
+10:13:01.686 -> Sample time shift from nominal (estimated): -0.181 seconds (mean: -0.160, RMS: 0.161)
+10:13:01.686 -> -----------------data logging-----------------
+10:13:01.686 -> time,temperature_esp32
+10:13:01.686 -> 2025-11-12T08:13:00.000000Z,24.900000
+10:13:01.686 -> ----------------------------------------------
+10:13:01.686 -> Compensated sample lag: 0.000187 seconds
+10:13:01.686 -> Posting to cloud ... DONE (HTTP 200, response: {"channel_id":3160355,"created_at":"2025-11-12T08:13:00Z","entry_id":2,"field1":24.9,"field2":null,"field3":null,"field4":null,"field5":null,"field6":null,"field7":null,"field8":null,"latitude":null,"longitude":null,"elevation":null,"status":null})
+10:13:03.016 -> Current time:
+10:13:03.016 -> DS1308 RTC 2025-11-12T08:13:04Z
+10:13:03.016 -> ESP32      2025-11-12T08:13:04.356238Z
+10:13:03.016 -> Will sleep until 2025-11-12T08:13:30.000000Z
 ```
 
 ## Troubleshooting
@@ -307,6 +335,11 @@ LICENSE                         # MIT license
 * **Time sync fails**: Check internet connectivity and NTP server accessibility
 * **RTC time drift**: DS1308 accuracy depends on crystal quality and temperature. Adjust `rtcDriftPpm` or `allowedDriftSeconds` to change NTP sync frequency
 * **Timing inconsistencies**: Ensure that both ESP32-C3 and the DS1308 RTC are continuously powered, also over the deep sleep periods. Monitor the sample time shift statistics. Large RMS values may indicate issues with deep sleep wake timing or RTC stability
+* **ThingSpeak upload fails**: 
+  - Verify API key in Secrets.h
+  - Check internet connectivity
+  - Ensure ThingSpeak channel has Field1 and Field2 configured
+  - Check ThingSpeak rate limits (15 second minimum between updates for free accounts)
 
 ## Technical details
 

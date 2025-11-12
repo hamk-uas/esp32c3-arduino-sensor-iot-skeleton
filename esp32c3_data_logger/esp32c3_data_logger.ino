@@ -3,6 +3,7 @@
 #include <esp_sntp.h>
 #include <Wire.h>
 #include <RTClib.h>
+#include <HTTPClient.h>
 
 // Secrets
 // -------
@@ -82,6 +83,34 @@ RTC_DATA_ATTR struct timeval nominalWakeTime = {0, 0};
 // Functions
 // ---------
 
+// Post sensor data to cloud via HTTP
+bool httpPost(const char* timestamp, float temperature_esp32) {
+  HTTPClient http;
+  
+  Serial.print("Posting to cloud ...");
+  
+  http.begin(thingspeak_api_url);
+  http.addHeader("Content-Type", "application/json");
+  
+  char payload[256];
+  snprintf(payload, sizeof(payload),
+           "{\"api_key\":\"%s\",\"created_at\":\"%s\",\"field1\":%.2f}",
+           thingspeak_api_key, timestamp, temperature_esp32);
+  
+  int httpResponseCode = http.POST(payload);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.printf(" DONE (HTTP %d, response: %s)\n", httpResponseCode, response.c_str());
+    http.end();
+    return true;
+  } else {
+    Serial.printf(" FAILED (Error: %s)\n", http.errorToString(httpResponseCode).c_str());
+    http.end();
+    return false;
+  }
+}
+
 uint64_t microsecondsUntilNextSample(const struct timeval& now, uint64_t samplingPeriodMicros) {
   uint64_t nowMicros = (uint64_t)now.tv_sec * MICROS_PER_SECOND + now.tv_usec;
   uint64_t midnightMicros = (uint64_t)(now.tv_sec - (now.tv_sec % 86400UL)) * MICROS_PER_SECOND;
@@ -144,7 +173,7 @@ void getTimeString(char* buf, size_t size, bool useRtc) {
 void setup() {
   // Read the sensor data first to minimize delays
   uint64_t espTimerAtSetupStart = esp_timer_get_time();
-  float temperature = temperatureRead();
+  float temperature_esp32 = temperatureRead();
 
   // Setup serial monitor
   Serial.begin(SERIAL_BAUD_RATE);
@@ -262,19 +291,20 @@ sampleCount++;
 
   // Log sensor data if not the first boot
   if (bootCount != 0) {
-    char buf[40];
-    formatTimeIso(nominalWakeTime.tv_sec, buf, sizeof(buf), nominalWakeTime.tv_usec);
+    char utcTimestampStrBuf[40];
+    formatTimeIso(nominalWakeTime.tv_sec, utcTimestampStrBuf, sizeof(utcTimestampStrBuf), nominalWakeTime.tv_usec);
     while (!Serial) delay(100);
     Serial.println("-----------------data logging-----------------");
     Serial.println("time,temperature_esp32");
-    Serial.printf("%s,%f\n", buf, temperature);
+    Serial.printf("%s,%f\n", utcTimestampStrBuf, temperature_esp32);
     Serial.println("----------------------------------------------");
     Serial.printf("Compensated sample lag: %.6f seconds\n", espTimerAtSetupStart/1e6f + adjustSleepSeconds);
+    // Post to cloud
+    httpPost(utcTimestampStrBuf, temperature_esp32);
   }
 
   // Print time
   char rtcTime[40], esp32Time[40];
-  //Include microseconds in ESP32 time for debugging, do not use getTimeString
   struct timeval now;
   getTimeString(rtcTime, sizeof(rtcTime), true);
   gettimeofday(&now, NULL);
@@ -290,11 +320,9 @@ sampleCount++;
   uint64_t totalMicros = (uint64_t)currentTime.tv_sec * MICROS_PER_SECOND + currentTime.tv_usec + sleepMicros;
   nominalWakeTime.tv_sec = totalMicros / MICROS_PER_SECOND;
   nominalWakeTime.tv_usec = totalMicros % MICROS_PER_SECOND;
-  
   char wakeTime[40];
   formatTimeIso(nominalWakeTime.tv_sec, wakeTime, sizeof(wakeTime), nominalWakeTime.tv_usec);
   Serial.printf("Will sleep until %s\n", wakeTime);
-  
   sleepMicros += adjustSleepSeconds * 1e6f;
   if (sleepMicros < 0) sleepMicros = 0;
 
