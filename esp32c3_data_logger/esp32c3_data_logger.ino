@@ -4,6 +4,9 @@
 #include <Wire.h>
 #include <RTClib.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
+#include <LittleFS.h>
+#include <WebServer.h>
 
 // Secrets
 // -------
@@ -16,6 +19,12 @@
 
 // Conversion factor from microseconds to seconds
 constexpr uint64_t MICROS_PER_SECOND = 1000000ULL;
+
+// Operation mode enum
+enum Mode {
+  MODE_DATALOGGER,
+  MODE_WEBSERVER
+};
 
 // Configuration
 // -------------
@@ -63,6 +72,9 @@ static_assert(ntpSyncIntervalMicros >= samplingPeriodMicros, "NTP sync interval 
 static_assert(ntpSyncIntervalMicros / samplingPeriodMicros <= UINT32_MAX, "NTP sync interval in sampling periods must fit in uint32_t. Decrease allowedDriftSeconds or increase rtcDriftPpm.");
 constexpr uint32_t ntpSyncIntervalSamplingPeriods = (uint32_t)(ntpSyncIntervalMicros / samplingPeriodMicros);
 
+// Web server port
+const uint16_t SERVER_PORT = 80;
+
 // State
 // -----
 
@@ -79,6 +91,67 @@ RTC_DATA_ATTR float meanSquareSampleShiftSeconds = 0;
 
 // Planned wake time (no plan initially, fill with zeros)
 RTC_DATA_ATTR struct timeval nominalWakeTime = {0, 0};
+
+// Preferences (used for saving current mode)
+Preferences prefs;
+
+// Get current mode from preferences. Returns MODE_DATALOGGER if not set.
+Mode getCurrentMode() {
+  prefs.begin("mode", true); // read-only
+  int val = prefs.getInt("currentMode", MODE_DATALOGGER);
+  prefs.end();
+  return (Mode)val;
+}
+
+// Set current mode in preferences
+void setCurrentMode(Mode m) {
+  prefs.begin("mode", false); // write
+  prefs.putInt("currentMode", m);
+  prefs.end();
+}
+
+// Current mode 
+Mode currentMode = getCurrentMode();
+
+// Web server
+WebServer server(SERVER_PORT);
+
+// ===== Serve the root page with file list =====
+void handleRoot() {
+  String html = F("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Files</title></head><body>");
+  html += F("<h1>Files in LittleFS</h1><ul>");
+
+  File root = LittleFS.open("/");
+  File file = root.openNextFile();
+  while (file) {
+    String name = file.name();   // e.g. "/blah.csv"
+    String displayName = name.substring(1); // remove leading '/'
+    html += "<li><a href=\"/download?file=" + displayName + "\">" + displayName + "</a></li>";
+    file = root.openNextFile();
+  }
+
+  html += F("</ul></body></html>");
+  server.send(200, "text/html", html);
+}
+
+// ===== Serve individual CSV files =====
+void handleDownload() {
+  if (!server.hasArg("file")) {
+    server.send(400, "text/plain", "Missing file argument");
+    return;
+  }
+
+  String fileName = "/" + server.arg("file");  // add back leading slash
+
+  if (!LittleFS.exists(fileName)) {
+    server.send(404, "text/plain", "File not found: " + fileName);
+    return;
+  }
+
+  File f = LittleFS.open(fileName, "r");
+  server.streamFile(f, "text/csv");
+  f.close();
+}
 
 // Functions
 // ---------
@@ -180,9 +253,15 @@ void setup() {
   while (!Serial) delay(100);
 
   // Print program name
-  Serial.println("============== ESP32-C3 Data Logger ==============");
+  Serial.println("============== ESP32-C3 Data Logger & Web Server==============");
   Serial.printf("Boot count: %" PRIu32 "\n", bootCount);
 
+  // ===== Initialize LittleFS =====
+  if (!LittleFS.begin(true)) {
+    Serial.println("LittleFS mount failed!");
+    while (1) delay(1000);
+  }
+ 
   // Initialize RTC
   Serial.print("Initializing DS1308 RTC ...");
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
@@ -210,9 +289,9 @@ void setup() {
       bool isConfigured = (strcmp(WiFi.SSID(i).c_str(), wifi_ssid) == 0);
       foundConfiguredSsid |= isConfigured;
       Serial.printf("%d: %s  (%" PRIi32 " dBm)  %s%s\n",
-          i, WiFi.SSID(i).c_str(), WiFi.RSSI(i),
-          (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "OPEN" : "SECURED",
-          isConfigured ? "  Matches the configured SSID" : "");
+        i, WiFi.SSID(i).c_str(), WiFi.RSSI(i),
+        (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "OPEN" : "SECURED",
+        isConfigured ? "  Matches the configured SSID" : "");
     }
     if (!foundConfiguredSsid) {
       Serial.println("Warning: Configured WiFi SSID not found in scan.");
@@ -230,109 +309,171 @@ void setup() {
   }
   Serial.printf(" DONE, got local ip %s\n", WiFi.localIP().toString().c_str());
 
-  // Get ESP32 and DS1308 RTC time from Internet per NTP sync schedule
-  // or if not scheduled for this boot, get ESP32 time from DS1308 RTC
-  if (bootCount % ntpSyncIntervalSamplingPeriods == 0) {
-    // Sync ESP32 time from NTP
-    Serial.print("Syncing time from NTP ...");
-    time_t now = 0;
-    struct tm timeinfo;
-    configTzTime(time_zone, ntpServerPrimary, ntpServerSecondary);
-    for(;;) {
-        time(&now);
-        gmtime_r(&now, &timeinfo);
-        if (timeinfo.tm_year >= (2025 - 1900)) break;
-        Serial.print(".");
-        delay(500);
+  // Mode switching using serial command
+  if (bootCount == 0) {
+    Serial.println("Commands:");
+    Serial.printf("l: Set mode to Data logger%s\n", (currentMode == MODE_DATALOGGER) ? " (current)" : "");
+    Serial.printf("s: Set mode to Web server%s\n", (currentMode == MODE_WEBSERVER) ? " (current)" : "");
+    Serial.print("Enter command within 5 seconds ...");
+    for (int i = 0; i < 5; i++) {
+      delay(1000);
+      Serial.print(".");
+      if (Serial.available()) {
+        String input = Serial.readStringUntil('\n');
+        input.trim();
+        if (input.equalsIgnoreCase("s")) {
+          currentMode = MODE_WEBSERVER;
+          setCurrentMode(currentMode);
+          break;
+        } else if (input.equalsIgnoreCase("l")) {
+          currentMode = MODE_DATALOGGER;
+          setCurrentMode(currentMode);
+          break;
+        } 
+      }
     }
-    Serial.println(" DONE");
-    
-    // Sync DS1308 RTC from ESP32 UTC time
-    Serial.print("Syncing DS1308 RTC from ESP32 ...");
-    syncRtcFromEsp32();
-    Serial.println(" DONE");
+  }
+  
+  if (currentMode == MODE_DATALOGGER) {
+    // Datalogger mode active
+    Serial.println(" Activating Data logger!");
+
+    // Get ESP32 and DS1308 RTC time from Internet per NTP sync schedule
+    // or if not scheduled for this boot, get ESP32 time from DS1308 RTC
+    if (bootCount % ntpSyncIntervalSamplingPeriods == 0) {
+      // Sync ESP32 time from NTP
+      Serial.print("Syncing time from NTP ...");
+      time_t now = 0;
+      struct tm timeinfo;
+      configTzTime(time_zone, ntpServerPrimary, ntpServerSecondary);
+      for(;;) {
+          time(&now);
+          gmtime_r(&now, &timeinfo);
+          if (timeinfo.tm_year >= (2025 - 1900)) break;
+          Serial.print(".");
+          delay(500);
+      }
+      Serial.println(" DONE");
+      
+      // Sync DS1308 RTC from ESP32 UTC time
+      Serial.print("Syncing DS1308 RTC from ESP32 ...");
+      syncRtcFromEsp32();
+      Serial.println(" DONE");
+    } else {
+      // Print time until next NTP sync
+      uint32_t remainder = bootCount % ntpSyncIntervalSamplingPeriods;
+      Serial.printf("Boots remaining until NTP sync: %" PRIu32 "\n", 
+                    (remainder == 0) ? 0 : ntpSyncIntervalSamplingPeriods - remainder);
+
+      // Sync ESP32 UTC time from DS1308 RTC
+      Serial.print("Syncing ESP32 time from DS1308 RTC ...");
+      syncEsp32FromRtc();
+      Serial.println(" DONE");
+    }
+
+    // Calculate and print when setup() actually started running
+    if (bootCount != 0) {
+      asm volatile("":::"memory");
+      struct timeval timeAtSetupStart;
+      uint64_t espTimerAtSync = esp_timer_get_time();
+      gettimeofday(&timeAtSetupStart, NULL);  // First get current time, then adjust backwards:
+      timeAtSetupStart.tv_sec -= (espTimerAtSync - espTimerAtSetupStart) / MICROS_PER_SECOND;
+      timeAtSetupStart.tv_usec -= (espTimerAtSync - espTimerAtSetupStart) % MICROS_PER_SECOND;
+      if (timeAtSetupStart.tv_usec < 0) {
+        timeAtSetupStart.tv_sec -= 1;
+        timeAtSetupStart.tv_usec += MICROS_PER_SECOND;
+      }
+      char setupStartTimeStr[40];
+      formatTimeIso(timeAtSetupStart.tv_sec, setupStartTimeStr, sizeof(setupStartTimeStr), timeAtSetupStart.tv_usec);
+      Serial.printf("Setup start time (estimated): %s\n", setupStartTimeStr);
+      float sampleShiftSeconds = (timeAtSetupStart.tv_sec - nominalWakeTime.tv_sec) + (timeAtSetupStart.tv_usec - nominalWakeTime.tv_usec) / 1e6f;
+      sampleCount++;
+      float delta_mean = (sampleShiftSeconds - meanSampleShiftSeconds) / sampleCount;
+      meanSampleShiftSeconds = meanSampleShiftSeconds + delta_mean;
+      float sampleShiftSecondsSquare = sampleShiftSeconds * sampleShiftSeconds;
+      float delta_mean_sq = (sampleShiftSecondsSquare - meanSquareSampleShiftSeconds) / sampleCount;
+      meanSquareSampleShiftSeconds = meanSquareSampleShiftSeconds + delta_mean_sq;
+      float rmsSampleShiftSeconds = sqrtf(meanSquareSampleShiftSeconds);
+      Serial.printf("Sample time shift from nominal (estimated): %.3f seconds (mean: %.3f, RMS: %.3f)\n", sampleShiftSeconds, meanSampleShiftSeconds, rmsSampleShiftSeconds);
+    }
+
+    // Log sensor data if not the first boot
+    if (bootCount != 0) {
+      // Get UTC timestamp
+      char utcTimestampStrBuf[40];
+      formatTimeIso(nominalWakeTime.tv_sec, utcTimestampStrBuf, sizeof(utcTimestampStrBuf), nominalWakeTime.tv_usec);
+
+      // Print to serial
+      while (!Serial) delay(100);
+      Serial.println("-----------------data logging-----------------");
+      Serial.println("time_utc,temperature_esp32");
+      Serial.printf("%s,%f\n", utcTimestampStrBuf, temperature_esp32);
+      Serial.println("----------------------------------------------");
+
+      // Print to log file
+      char logFileName[20];
+      snprintf(logFileName, sizeof(logFileName), "/%.*s.csv", 7, utcTimestampStrBuf); // YYYY-MM.csv
+      if (!LittleFS.exists(logFileName)) {
+        File logFile = LittleFS.open(logFileName, "w");
+        if (logFile) {
+          logFile.println("time_utc,temperature_esp32");
+          logFile.close();
+        }
+      }
+      File logFile = LittleFS.open(logFileName, "a");
+      if (logFile) {
+        logFile.printf("%s,%f\n", utcTimestampStrBuf, temperature_esp32);
+        logFile.close();
+      } else {
+        Serial.println("Failed to open log file");
+      }
+      Serial.printf("Compensated sample lag: %.6f seconds\n", espTimerAtSetupStart/1e6f + adjustSleepSeconds);
+
+      // Post to cloud
+      httpPost(utcTimestampStrBuf, temperature_esp32);
+    }
+
+    // Print time
+    char rtcTime[40], esp32Time[40];
+    struct timeval now;
+    getTimeString(rtcTime, sizeof(rtcTime), true);
+    gettimeofday(&now, NULL);
+    formatTimeIso(now.tv_sec, esp32Time, sizeof(esp32Time), now.tv_usec);
+    Serial.println("Current time:");
+    Serial.printf("DS1308 RTC %s\n", rtcTime);
+    Serial.printf("ESP32      %s\n", esp32Time);
+
+    // Calculate deep sleep duration to wake at next sampling time
+    struct timeval currentTime;
+    gettimeofday(&currentTime, NULL);
+    int64_t sleepMicros = microsecondsUntilNextSample(currentTime, samplingPeriodMicros);
+    uint64_t totalMicros = (uint64_t)currentTime.tv_sec * MICROS_PER_SECOND + currentTime.tv_usec + sleepMicros;
+    nominalWakeTime.tv_sec = totalMicros / MICROS_PER_SECOND;
+    nominalWakeTime.tv_usec = totalMicros % MICROS_PER_SECOND;
+    char wakeTime[40];
+    formatTimeIso(nominalWakeTime.tv_sec, wakeTime, sizeof(wakeTime), nominalWakeTime.tv_usec);
+    Serial.printf("Will sleep until %s\n", wakeTime);
+    sleepMicros += adjustSleepSeconds * 1e6f;
+    if (sleepMicros < 0) sleepMicros = 0;
+
+    // Go to deep sleep
+    bootCount++;
+    LittleFS.end();
+    Serial.flush();
+    esp_sleep_enable_timer_wakeup(sleepMicros);
+    esp_deep_sleep_start();
   } else {
-    // Print time until next NTP sync
-    uint32_t remainder = bootCount % ntpSyncIntervalSamplingPeriods;
-    Serial.printf("Boots remaining until NTP sync: %" PRIu32 "\n", 
-                  (remainder == 0) ? 0 : ntpSyncIntervalSamplingPeriods - remainder);
-
-    // Sync ESP32 UTC time from DS1308 RTC
-    Serial.print("Syncing ESP32 time from DS1308 RTC ...");
-    syncEsp32FromRtc();
-    Serial.println(" DONE");
+    // Web server mode active
+    Serial.println(" Activating Web server!");
+    server.on("/", handleRoot);
+    server.on("/download", handleDownload);
+    server.begin();
+    Serial.printf("Web Server running at http://%s:%u/\n", WiFi.localIP().toString().c_str(), SERVER_PORT);
   }
-
-  // Calculate and print when setup() actually started running
-  if (bootCount != 0) {
-    asm volatile("":::"memory");
-    struct timeval timeAtSetupStart;
-    uint64_t espTimerAtSync = esp_timer_get_time();
-    gettimeofday(&timeAtSetupStart, NULL);  // First get current time, then adjust backwards:
-    timeAtSetupStart.tv_sec -= (espTimerAtSync - espTimerAtSetupStart) / MICROS_PER_SECOND;
-    timeAtSetupStart.tv_usec -= (espTimerAtSync - espTimerAtSetupStart) % MICROS_PER_SECOND;
-    if (timeAtSetupStart.tv_usec < 0) {
-      timeAtSetupStart.tv_sec -= 1;
-      timeAtSetupStart.tv_usec += MICROS_PER_SECOND;
-    }
-    char setupStartTimeStr[40];
-    formatTimeIso(timeAtSetupStart.tv_sec, setupStartTimeStr, sizeof(setupStartTimeStr), timeAtSetupStart.tv_usec);
-    Serial.printf("Setup start time (estimated): %s\n", setupStartTimeStr);
-    float sampleShiftSeconds = (timeAtSetupStart.tv_sec - nominalWakeTime.tv_sec) + (timeAtSetupStart.tv_usec - nominalWakeTime.tv_usec) / 1e6f;
-sampleCount++;
-    float delta_mean = (sampleShiftSeconds - meanSampleShiftSeconds) / sampleCount;
-    meanSampleShiftSeconds = meanSampleShiftSeconds + delta_mean;
-    float sampleShiftSecondsSquare = sampleShiftSeconds * sampleShiftSeconds;
-    float delta_mean_sq = (sampleShiftSecondsSquare - meanSquareSampleShiftSeconds) / sampleCount;
-    meanSquareSampleShiftSeconds = meanSquareSampleShiftSeconds + delta_mean_sq;
-    float rmsSampleShiftSeconds = sqrtf(meanSquareSampleShiftSeconds);
-    Serial.printf("Sample time shift from nominal (estimated): %.3f seconds (mean: %.3f, RMS: %.3f)\n", sampleShiftSeconds, meanSampleShiftSeconds, rmsSampleShiftSeconds);
-  }
-
-  // Log sensor data if not the first boot
-  if (bootCount != 0) {
-    char utcTimestampStrBuf[40];
-    formatTimeIso(nominalWakeTime.tv_sec, utcTimestampStrBuf, sizeof(utcTimestampStrBuf), nominalWakeTime.tv_usec);
-    while (!Serial) delay(100);
-    Serial.println("-----------------data logging-----------------");
-    Serial.println("time,temperature_esp32");
-    Serial.printf("%s,%f\n", utcTimestampStrBuf, temperature_esp32);
-    Serial.println("----------------------------------------------");
-    Serial.printf("Compensated sample lag: %.6f seconds\n", espTimerAtSetupStart/1e6f + adjustSleepSeconds);
-    // Post to cloud
-    httpPost(utcTimestampStrBuf, temperature_esp32);
-  }
-
-  // Print time
-  char rtcTime[40], esp32Time[40];
-  struct timeval now;
-  getTimeString(rtcTime, sizeof(rtcTime), true);
-  gettimeofday(&now, NULL);
-  formatTimeIso(now.tv_sec, esp32Time, sizeof(esp32Time), now.tv_usec);
-  Serial.println("Current time:");
-  Serial.printf("DS1308 RTC %s\n", rtcTime);
-  Serial.printf("ESP32      %s\n", esp32Time);
-
-  // Calculate deep sleep duration to wake at next sampling time
-  struct timeval currentTime;
-  gettimeofday(&currentTime, NULL);
-  int64_t sleepMicros = microsecondsUntilNextSample(currentTime, samplingPeriodMicros);
-  uint64_t totalMicros = (uint64_t)currentTime.tv_sec * MICROS_PER_SECOND + currentTime.tv_usec + sleepMicros;
-  nominalWakeTime.tv_sec = totalMicros / MICROS_PER_SECOND;
-  nominalWakeTime.tv_usec = totalMicros % MICROS_PER_SECOND;
-  char wakeTime[40];
-  formatTimeIso(nominalWakeTime.tv_sec, wakeTime, sizeof(wakeTime), nominalWakeTime.tv_usec);
-  Serial.printf("Will sleep until %s\n", wakeTime);
-  sleepMicros += adjustSleepSeconds * 1e6f;
-  if (sleepMicros < 0) sleepMicros = 0;
-
-  // Go to deep sleep
-  bootCount++; 
-  Serial.flush();
-  esp_sleep_enable_timer_wakeup(sleepMicros);
-  esp_deep_sleep_start();
 }
 
+// Only used in web server mode
 void loop() {
-  // Not used because we enter deep sleep in setup()
+  // Handle web server clients
+  server.handleClient();
 }
