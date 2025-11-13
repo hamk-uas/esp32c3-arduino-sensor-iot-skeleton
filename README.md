@@ -130,6 +130,8 @@ gantt
     dateFormat ms
     axisFormat 00:%M:%S
 
+    setup() start : vert, setup_start, 2026-01-02T00:00:01, 0s
+
     section Power-on
     ESP startup and Arduino init        :wake, 2026-01-02T00:00:00, 1s
 
@@ -155,6 +157,8 @@ gantt
     dateFormat ms
     axisFormat 00:%M:%S
 
+    setup() start : vert, setup_start, 2026-01-01T00:01:00, 0s
+
     section Wake
     ESP wake and Arduino init   :wake, 2026-01-01T00:00:59, 1s
 
@@ -179,6 +183,8 @@ gantt
 
     dateFormat ms
     axisFormat 00:%M:%S
+
+    setup() start : vert, setup_start, 2026-01-01T00:02:00, 0s
 
     section Wake
     ESP wake and Arduino init   :wake, 2026-01-01T00:01:59, 1s
