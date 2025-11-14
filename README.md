@@ -19,7 +19,7 @@ Data logger:
 
 File server:
 
-- **Download data files**: Use a web browser to access ESP32-C3 at its intranet IP, to download backup data files.
+- **Download data files**: Use a web browser to access ESP32-C3 to download backup data files.
 
 ## Missing features (TODO)
 
@@ -130,6 +130,8 @@ gantt
     dateFormat ms
     axisFormat 00:%M:%S
 
+    setup() start : vert, setup_start, 2026-01-02T00:00:01, 0s
+
     section Power-on
     ESP startup and Arduino init        :wake, 2026-01-02T00:00:00, 1s
 
@@ -155,6 +157,8 @@ gantt
     dateFormat ms
     axisFormat 00:%M:%S
 
+    setup() start : vert, setup_start, 2026-01-01T00:01:00, 0s
+
     section Wake
     ESP wake and Arduino init   :wake, 2026-01-01T00:00:59, 1s
 
@@ -179,6 +183,8 @@ gantt
 
     dateFormat ms
     axisFormat 00:%M:%S
+
+    setup() start : vert, setup_start, 2026-01-01T00:02:00, 0s
 
     section Wake
     ESP wake and Arduino init   :wake, 2026-01-01T00:01:59, 1s
@@ -354,15 +360,13 @@ Example output:
 
 ## Technical details
 
-* **WiFi power limiting**: WiFi power has been reduced by `WiFi.setTxPower(WIFI_POWER_8_5dBm);` [to go around an antenna design flaw](https://forum.arduino.cc/t/no-wifi-connect-with-esp32-c3-super-mini/1324046/13) in some early ESP32-C3 Super Mini modules.
+* **WiFi power limiting**: WiFi power has been reduced by `WiFi.setTxPower(WIFI_POWER_8_5dBm);` as [suggested here](https://forum.arduino.cc/t/no-wifi-connect-with-esp32-c3-super-mini/1324046/13) to work around a possible antenna design flaw in some early ESP32-C3 Super Mini modules. [Another report](https://github.com/sigmdel/supermini_esp32c3_sketches?tab=readme-ov-file#05_wifi_tx_power), perhaps more plausibly, attributes the need for power reduction to insufficient current from the on-board 3.3V regulator.
 * **UTC linearity**: This implementation assumes that UTC time is continuous and linear. Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments might be tolerated by configuring a large enough maximum ppm drift.
-* **DS1308 vs. ESP32-C3 RTC**: The external DS1308 RTC could probably be replaced by the ESP32-C3 internal RTC, by adding an external 32768 Hz xtal for ESP32-C3.
+* **DS1308 vs. ESP32-C3 RTC**: The external DS1308 RTC could probably be replaced by the ESP32-C3 internal RTC, by adding an external 32768 Hz xtal for ESP32-C3 [although that doesn't seem very easy to get working](https://github.com/espressif/arduino-esp32/issues/7669).
 
 ## ESP32-C3 File Server
 
-
-
-ESP32 File Manager for Generation Klick
+...TODO...
 
 ## Authors
 
