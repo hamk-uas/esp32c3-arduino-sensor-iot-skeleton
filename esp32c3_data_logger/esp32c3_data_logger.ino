@@ -39,8 +39,8 @@ const char *title = "============== ESP32-C3 Data Logger ==============";
 // * Time sync (~15 s)
 constexpr uint64_t samplingPeriodSeconds = 30; // 30 seconds
 
-// Sampling time adjustment
-constexpr float adjustSleepSeconds = -0.008738f;
+// Sleep time additive adjustment (can be negatiive)
+constexpr float sleepAdditionalSeconds = 0.122262f;
 
 // Maximum RTC clock drift in ppm for the temperature range, for NTP sync scheduling
 // See Fig. 3 of Maxim Integrated APPLICATION NOTE 504: Design Considerations for Maxim Real-Time Clocks, Feb 15, 2002
@@ -98,6 +98,24 @@ RTC_DATA_ATTR struct timeval nominalWakeTime = {0, 0};
 // Preferences (used for saving current mode)
 Preferences prefs;
 
+// Current mode (set in setup())
+Mode currentMode;
+
+// Web server
+WebServer server(SERVER_PORT);
+
+// Functions
+// ---------
+
+// Function to return LittleFS usage information as a String
+String getLittleFSUsage() {
+  size_t totalBytes = LittleFS.totalBytes();
+  size_t usedBytes = LittleFS.usedBytes();
+  float percentage = (totalBytes > 0) ? (usedBytes * 100.0f / totalBytes) : 0.0f;
+  
+  return String(usedBytes) + " / " + String(totalBytes) + " bytes (" + String(percentage, 1) + "%)";
+}
+
 // Get current mode from preferences. Returns MODE_DATALOGGER if not set.
 Mode getCurrentMode() {
   prefs.begin("mode", true); // read-only
@@ -113,27 +131,32 @@ void setCurrentMode(Mode m) {
   prefs.end();
 }
 
-// Current mode 
-Mode currentMode;
-
-// Web server
-WebServer server(SERVER_PORT);
-
 // Web server root handler
 void handleRoot() {
   String html =
     "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
     "<title>" + String(title) + "</title>"
     "<style>"
-    "button.delete{"
-    "  margin-left:10px;"
-    "  color:white;"
-    "  background:red;"
+    "button{"
+    "  margin-left:5px;"
     "  border:none;"
-    "  padding:2px 6px;"
+    "  padding:4px 8px;"
     "  cursor:pointer;"
     "  font-weight:bold;"
     "  font-size:0.9em;"
+    "  border-radius:3px;"
+    "}"
+    "button.view{"
+    "  color:white;"
+    "  background:#2196F3;"
+    "}"
+    "button.download{"
+    "  color:white;"
+    "  background:#4CAF50;"
+    "}"
+    "button.delete{"
+    "  color:white;"
+    "  background:#f44336;"
     "}"
     "form{display:inline;}"
     "</style>"
@@ -148,32 +171,78 @@ void handleRoot() {
     "}"
     "</script>"
     "</head><body>"
-    "<h1>" + String(title) + "</h1><ul>";
-
+    "<h1>" + String(title) + "</h1>";
+  
   File root = LittleFS.open("/");
   File file = root.openNextFile();
+  
+  // Check if there are any files
+  bool hasFiles = false;
+  if (file) {
+    hasFiles = true;
+    html += "<ul>";
+    
+    while (file) {
+      String name = file.name();  // keep leading slash
+      
+      html += "<li>"
+              + name +
+              
+              // View button
+              "<a href=\"/view?file=" + name + "\">"
+              "<button type=\"button\" class=\"view\">👁 View</button>"
+              "</a>"
+              
+              // Download button
+              "<a href=\"/download?file=" + name + "\">"
+              "<button type=\"button\" class=\"download\">⬇ Download</button>"
+              "</a>"
+              
+              // Delete form with X button and confirmation
+              "<form action=\"/delete\" method=\"POST\" "
+              "onsubmit=\"return confirmDelete(this, '" + name + "');\">"
+              "<input type=\"hidden\" name=\"file\" value=\"" + name + "\">"
+              "<button type=\"submit\" class=\"delete\">🗑 Delete</button>"
+              "</form>"
+              
+              "</li>";
+      
+      file = root.openNextFile();
+    }
+    
+    html += "</ul>";
+  } else {
+    html += "<p><em>No files found.</em></p>";
+  }
+  
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
 
-  while (file) {
-    String name = file.name();  // keep leading slash
-
-    html += "<li>"
-            "<a href=\"/download?file=" + name + "\">" + name + "</a>"
-
-            // Inline delete form with X button and confirmation
-            "<form action=\"/delete\" method=\"POST\" "
-            "onsubmit=\"return confirmDelete(this, '" + name + "');\">"
-            "<input type=\"hidden\" name=\"file\" value=\"" + name + "\">"
-            "<button type=\"submit\" class=\"delete\">X</button>"
-            "</form>"
-
-            "</li>";
-
-    file = root.openNextFile();
+// Web server view handler: raw CSV as plain text with encoding
+void handleView() {
+  if (!server.hasArg("file")) {
+    server.send(400, "text/plain", "Missing file argument");
+    return;
   }
 
-  html += "</ul></body></html>";
+  String fileName = "/" + server.arg("file");
 
-  server.send(200, "text/html", html);
+  if (!LittleFS.exists(fileName)) {
+    server.send(404, "text/plain", "File not found: " + fileName);
+    return;
+  }
+
+  File f = LittleFS.open(fileName, "r");
+  if (!f) {
+    server.send(500, "text/plain", "Failed to open file");
+    return;
+  }
+
+  // Stream file as plain text with UTF-8 encoding
+  server.sendHeader("Content-Type", "text/plain; charset=utf-8");
+  server.streamFile(f, "text/plain");
+  f.close();
 }
 
 // Web server download request handler
@@ -182,14 +251,14 @@ void handleDownload() {
     server.send(400, "text/plain", "Missing file argument");
     return;
   }
-
+  
   String fileName = "/" + server.arg("file");  // add back leading slash
-
+  
   if (!LittleFS.exists(fileName)) {
     server.send(404, "text/plain", "File not found: " + fileName);
     return;
   }
-
+  
   File f = LittleFS.open(fileName, "r");
   server.sendHeader("Content-Type", "text/csv");
   server.sendHeader("Content-Disposition", "attachment; filename=\"" + server.arg("file") + "\"");
@@ -204,24 +273,20 @@ void handleDelete() {
     server.send(400, "text/plain", "Missing file argument");
     return;
   }
-
+  
   String fileName = "/" + server.arg("file");  // add back leading slash
-
+  
   if (!LittleFS.exists(fileName)) {
     server.send(404, "text/plain", "File not found: " + fileName);
     return;
   }
-
+  
   LittleFS.remove(fileName);
-
+  
   // Redirect back to the main page
   server.sendHeader("Location", "/");
   server.send(303);  // 303 = "See Other" (redirect after POST)
 }
-
-
-// Functions
-// ---------
 
 // Post sensor data to cloud via HTTP
 bool httpPost(const char* timestamp, float temperature_esp32) {
@@ -331,6 +396,8 @@ void setup() {
     Serial.println("LittleFS mount failed!");
     while (1) delay(1000);
   }
+  // Print usage using String
+  Serial.println("LittleFS usage: " + getLittleFSUsage());
  
   // Initialize RTC
   Serial.print("Initializing DS1308 RTC ...");
@@ -381,32 +448,50 @@ void setup() {
 
   // Mode switching using serial command
   if (bootCount == 0) {
-    Serial.println("Commands:");
-    Serial.printf("l: Set mode to Data logger%s\n", (currentMode == MODE_DATALOGGER) ? " (current)" : "");
-    Serial.printf("s: Set mode to Web server%s\n", (currentMode == MODE_WEBSERVER) ? " (current)" : "");
-    Serial.print("Enter command within 5 seconds ...");
-    for (int i = 0; i < 5; i++) {
+    Serial.println("Available commands:");
+    Serial.printf("  logger: Set mode to Data logger%s\n", (currentMode == MODE_DATALOGGER) ? " (current)" : "");
+    Serial.printf("  server: Set mode to Web server%s\n", (currentMode == MODE_WEBSERVER) ? " (current)" : "");
+    Serial.println("  format: Format LittleFS to delete all files");
+    for (int i = 0;; i++) {
+      if (i == 0) {
+        Serial.print("Enter command within 10 seconds ...");        
+      } else if (i == 10) {
+        Serial.println();
+        break;
+      }
       delay(1000);
       Serial.print(".");
       if (Serial.available()) {
         String input = Serial.readStringUntil('\n');
         input.trim();
-        if (input.equalsIgnoreCase("s")) {
+        Serial.println("Received command: " + input);
+        if (input.equalsIgnoreCase("server")) {
           currentMode = MODE_WEBSERVER;
           setCurrentMode(currentMode);
           break;
-        } else if (input.equalsIgnoreCase("l")) {
+        } else if (input.equalsIgnoreCase("logger")) {
           currentMode = MODE_DATALOGGER;
           setCurrentMode(currentMode);
           break;
-        } 
+        } else if (input.equalsIgnoreCase("format")) {
+          Serial.print("Formatting LittleFS ...");
+          if (LittleFS.format()) {
+            Serial.println(" DONE");
+          } else {
+            Serial.println(" FAILED");
+          }
+          i = -1;
+          continue;
+        } else {
+          Serial.println("Unknown command");
+        }
       }
     }
   }
   
   if (currentMode == MODE_DATALOGGER) {
     // Datalogger mode active
-    Serial.println(" Activating Data logger!");
+    Serial.println("Activating Data logger!");
 
     // Get ESP32 and DS1308 RTC time from Internet per NTP sync schedule
     // or if not scheduled for this boot, get ESP32 time from DS1308 RTC
@@ -455,7 +540,8 @@ void setup() {
       }
       char setupStartTimeStr[40];
       formatTimeIso(timeAtSetupStart.tv_sec, setupStartTimeStr, sizeof(setupStartTimeStr), timeAtSetupStart.tv_usec);
-      Serial.printf("Setup start time (estimated): %s\n", setupStartTimeStr);
+      Serial.printf("Boot-setup() latency: %.6f seconds\n", espTimerAtSetupStart/1e6f);
+      Serial.printf("setup() start time (estimated): %s\n", setupStartTimeStr);
       float sampleShiftSeconds = (timeAtSetupStart.tv_sec - nominalWakeTime.tv_sec) + (timeAtSetupStart.tv_usec - nominalWakeTime.tv_usec) / 1e6f;
       sampleCount++;
       float delta_mean = (sampleShiftSeconds - meanSampleShiftSeconds) / sampleCount;
@@ -475,10 +561,8 @@ void setup() {
 
       // Print to serial
       while (!Serial) delay(100);
-      Serial.println("-----------------data logging-----------------");
       Serial.println("time_utc,temperature_esp32");
       Serial.printf("%s,%f\n", utcTimestampStrBuf, temperature_esp32);
-      Serial.println("----------------------------------------------");
 
       // Print to log file
       char logFileName[20];
@@ -497,7 +581,6 @@ void setup() {
       } else {
         Serial.println("Failed to open log file");
       }
-      Serial.printf("Boot-setup() latency: %.6f seconds\n", espTimerAtSetupStart/1e6f);
 
       // Post to cloud
       httpPost(utcTimestampStrBuf, temperature_esp32);
@@ -522,8 +605,8 @@ void setup() {
     nominalWakeTime.tv_usec = totalMicros % MICROS_PER_SECOND;
     char wakeTime[40];
     formatTimeIso(nominalWakeTime.tv_sec, wakeTime, sizeof(wakeTime), nominalWakeTime.tv_usec);
-    Serial.printf("Will sleep until %s\n", wakeTime);
-    sleepMicros += adjustSleepSeconds * 1e6f;
+    Serial.printf("Will sleep until %s\n + %f s", wakeTime, sleepAdditionalSeconds);
+    sleepMicros += sleepAdditionalSeconds * 1e6f;
     if (sleepMicros < 0) sleepMicros = 0;
 
     // Go to deep sleep
@@ -534,8 +617,9 @@ void setup() {
     esp_deep_sleep_start();
   } else {
     // Web server mode active
-    Serial.println(" Activating Web server!");
+    Serial.println("Activating Web server!"); 
     server.on("/", handleRoot);
+    server.on("/view", handleView);
     server.on("/download", handleDownload);
     server.on("/delete", HTTP_POST, handleDelete);
     server.begin();
