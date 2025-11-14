@@ -19,7 +19,7 @@ Data logger:
 
 File server:
 
-- **Download data files**: Use a web browser to access ESP32-C3 at its intranet IP, to download backup data files.
+- **Download data files**: Use a web browser to access ESP32-C3 to download backup data files.
 
 ## Missing features (TODO)
 
