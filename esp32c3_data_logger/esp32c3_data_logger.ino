@@ -26,6 +26,9 @@ enum Mode {
   MODE_WEBSERVER
 };
 
+// Title
+const char *title = "============== ESP32-C3 Data Logger ==============";
+
 // Configuration
 // -------------
 
@@ -111,30 +114,69 @@ void setCurrentMode(Mode m) {
 }
 
 // Current mode 
-Mode currentMode = getCurrentMode();
+Mode currentMode;
 
 // Web server
 WebServer server(SERVER_PORT);
 
-// ===== Serve the root page with file list =====
+// Web server root handler
 void handleRoot() {
-  String html = F("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Files</title></head><body>");
-  html += F("<h1>Files in LittleFS</h1><ul>");
+  String html =
+    "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
+    "<title>" + String(title) + "</title>"
+    "<style>"
+    "button.delete{"
+    "  margin-left:10px;"
+    "  color:white;"
+    "  background:red;"
+    "  border:none;"
+    "  padding:2px 6px;"
+    "  cursor:pointer;"
+    "  font-weight:bold;"
+    "  font-size:0.9em;"
+    "}"
+    "form{display:inline;}"
+    "</style>"
+    // Minimal inline JS for confirmation
+    "<script>"
+    "function confirmDelete(form, fileName){"
+    "  if(confirm('Are you sure you want to delete \"' + fileName + '\"?')){"
+    "    form.submit();"
+    "  } else {"
+    "    return false;"
+    "  }"
+    "}"
+    "</script>"
+    "</head><body>"
+    "<h1>" + String(title) + "</h1><ul>";
 
   File root = LittleFS.open("/");
   File file = root.openNextFile();
+
   while (file) {
-    String name = file.name();   // e.g. "/blah.csv"
-    String displayName = name.substring(1); // remove leading '/'
-    html += "<li><a href=\"/download?file=" + displayName + "\">" + displayName + "</a></li>";
+    String name = file.name();  // keep leading slash
+
+    html += "<li>"
+            "<a href=\"/download?file=" + name + "\">" + name + "</a>"
+
+            // Inline delete form with X button and confirmation
+            "<form action=\"/delete\" method=\"POST\" "
+            "onsubmit=\"return confirmDelete(this, '" + name + "');\">"
+            "<input type=\"hidden\" name=\"file\" value=\"" + name + "\">"
+            "<button type=\"submit\" class=\"delete\">X</button>"
+            "</form>"
+
+            "</li>";
+
     file = root.openNextFile();
   }
 
-  html += F("</ul></body></html>");
+  html += "</ul></body></html>";
+
   server.send(200, "text/html", html);
 }
 
-// ===== Serve individual CSV files =====
+// Web server download request handler
 void handleDownload() {
   if (!server.hasArg("file")) {
     server.send(400, "text/plain", "Missing file argument");
@@ -149,9 +191,34 @@ void handleDownload() {
   }
 
   File f = LittleFS.open(fileName, "r");
+  server.sendHeader("Content-Type", "text/csv");
+  server.sendHeader("Content-Disposition", "attachment; filename=\"" + server.arg("file") + "\"");
+  server.sendHeader("Connection", "close");
   server.streamFile(f, "text/csv");
   f.close();
 }
+
+// Web server delete request handler
+void handleDelete() {
+  if (!server.hasArg("file")) {
+    server.send(400, "text/plain", "Missing file argument");
+    return;
+  }
+
+  String fileName = "/" + server.arg("file");  // add back leading slash
+
+  if (!LittleFS.exists(fileName)) {
+    server.send(404, "text/plain", "File not found: " + fileName);
+    return;
+  }
+
+  LittleFS.remove(fileName);
+
+  // Redirect back to the main page
+  server.sendHeader("Location", "/");
+  server.send(303);  // 303 = "See Other" (redirect after POST)
+}
+
 
 // Functions
 // ---------
@@ -252,8 +319,11 @@ void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
   while (!Serial) delay(100);
 
+  // Get persistent current mode
+  currentMode = getCurrentMode();
+
   // Print program name
-  Serial.println("============== ESP32-C3 Data Logger & Web Server==============");
+  Serial.println(title);
   Serial.printf("Boot count: %" PRIu32 "\n", bootCount);
 
   // ===== Initialize LittleFS =====
@@ -427,7 +497,7 @@ void setup() {
       } else {
         Serial.println("Failed to open log file");
       }
-      Serial.printf("Compensated sample lag: %.6f seconds\n", espTimerAtSetupStart/1e6f + adjustSleepSeconds);
+      Serial.printf("Boot-setup() latency: %.6f seconds\n", espTimerAtSetupStart/1e6f);
 
       // Post to cloud
       httpPost(utcTimestampStrBuf, temperature_esp32);
@@ -467,6 +537,7 @@ void setup() {
     Serial.println(" Activating Web server!");
     server.on("/", handleRoot);
     server.on("/download", handleDownload);
+    server.on("/delete", HTTP_POST, handleDelete);
     server.begin();
     Serial.printf("Web Server running at http://%s:%u/\n", WiFi.localIP().toString().c_str(), SERVER_PORT);
   }
