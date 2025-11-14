@@ -362,7 +362,7 @@ Example output:
 
 * **WiFi power limiting**: WiFi power has been reduced by `WiFi.setTxPower(WIFI_POWER_8_5dBm);` as [suggested here](https://forum.arduino.cc/t/no-wifi-connect-with-esp32-c3-super-mini/1324046/13) to work around a possible antenna design flaw in some early ESP32-C3 Super Mini modules. [Another report](https://github.com/sigmdel/supermini_esp32c3_sketches?tab=readme-ov-file#05_wifi_tx_power), perhaps more plausibly, attributes the need for power reduction to insufficient current from the on-board 3.3V regulator.
 * **UTC linearity**: This implementation assumes that UTC time is continuous and linear. Jumps such as leap seconds are not tolerated. There have been no leap seconds since 2015 and they are likely to be phased out from UTC, see [Resolution 4 of the 27th General Conference on Weights and Measures (CGPM), 2022](https://www.bipm.org/en/cgpm-2022/resolution-4). More subtle UTC adjustments might be tolerated by configuring a large enough maximum ppm drift.
-* **DS1308 vs. ESP32-C3 RTC**: The external DS1308 RTC could probably be replaced by the ESP32-C3 internal RTC, by adding an external 32768 Hz xtal for ESP32-C3.
+* **DS1308 vs. ESP32-C3 RTC**: The external DS1308 RTC could probably be replaced by the ESP32-C3 internal RTC, by adding an external 32768 Hz xtal for ESP32-C3 [although that doesn't seem very easy to get working](https://github.com/espressif/arduino-esp32/issues/7669).
 
 ## ESP32-C3 File Server
 
