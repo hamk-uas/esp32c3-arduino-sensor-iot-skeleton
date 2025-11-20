@@ -1,20 +1,18 @@
 # ESP32-C3 Data Logger and File Server
 
-A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling synchronized to Coordinated Universal Time (UTC). Suitable 20-second or longer sampling periods.
-
-A file server that can be used to access the backup files stored in ESP32-C3 flash memory by the data logger.
+A low-power data logger using ESP32-C3 Super Mini and DS1308 RTC, with sampling synchronized to Coordinated Universal Time (UTC). Suitable 30-second or longer sampling periods. Logs data to ThingSpeak and ESP32-C3 flash memory. Can be switched to a web server mode upon startup, for log file download.
 
 ## Features
 
 Data logger:
 
-- **UTC synchronous sampling**: Configurable sampling period with sampling aligned to midnight UTC. Sub-second-level time tracking. Local time zone is configurable but does not affect sampling
-- **Power efficient**: Deep sleep between samples
+- **UTC synchronous sampling**: Configurable uniform sampling aligned to midnight UTC. Sub-second-level time tracking
+- **Power efficient**: Deep sleep between sensor reads
 - **Reliable timekeeping**: DS1308 (DS1307-compatible) RTC maintains time across deep sleep cycles
-- **Smart time sync**: Scheduled NTP synchronization based on configured RTC drift and tolerance
-- **Wakeup latency compensation**: Configurable ESP32-C3 wakeup latency compensation
-- **WiFi connectivity**: Connects to configured network for NTP sync and data logging to cloud
-- **Timing diagnostics**: Real-time tracking of sample time shift statistics (mean and RMS)
+- **WiFi connectivity**: Connects to configured network for NTP sync and for ThingSpeak data upload
+- **Smart time sync**: Scheduled NTP synchronization based on specified RTC ppm drift and sample time drift tolerance
+- **Configurable timing compensation**: Configurable additive compensation of wakeup time
+- **Timing diagnostics**: Real-time tracking of sample time shift statistics (mean, standard deviation, and RMS)
 - **IoT data upload**: Data logging to cloud (ThingSpeak) with multi-field HTTP JSON POST request
 
 File server:

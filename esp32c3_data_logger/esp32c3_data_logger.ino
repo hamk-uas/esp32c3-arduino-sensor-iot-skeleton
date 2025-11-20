@@ -7,6 +7,7 @@
 #include <Preferences.h>
 #include <LittleFS.h>
 #include <WebServer.h>
+#include <esp_sntp.h>
 
 // Secrets
 // -------
@@ -90,7 +91,7 @@ constexpr uint32_t ntpSyncIntervalSamplingPeriods = (uint32_t)(ntpSyncIntervalMi
 const uint16_t SERVER_PORT = 80;
 
 // Check timeout settings
-static_assert(samplingPeriodSeconds < wifiConnectTimeoutSeconds + ntpSyncTimeoutSeconds + 3, "Total timeout + overhead exceeds sampling period. Adjust timeouts or increase sampling period.");
+static_assert(samplingPeriodSeconds >= wifiConnectTimeoutSeconds + ntpSyncTimeoutSeconds + 3, "Total timeout + overhead exceeds sampling period. Adjust timeouts or increase sampling period.");
 
 // State
 // -----
@@ -105,9 +106,9 @@ RTC_DATA_ATTR uint32_t bootCount = 0;
 RTC_DATA_ATTR int32_t bootsUntilNTCSync = 0;
 
 // Statistics on sample time shifts (mean and root mean square)
-RTC_DATA_ATTR float meanSampleShiftSeconds = 0;
 RTC_DATA_ATTR uint32_t sampleCount = 0;
-RTC_DATA_ATTR float meanSquareSampleShiftSeconds = 0;
+RTC_DATA_ATTR float meanSampleShiftSeconds = 0.0f;
+RTC_DATA_ATTR float M2 = 0.0f;   // Sum of squared deviations (Welford)
 
 // Planned wake time (no plan initially, fill with zeros)
 RTC_DATA_ATTR struct timeval nominalWakeTime = {0, 0};
@@ -308,7 +309,7 @@ void handleDelete() {
 // Post sensor data to ThinkSpeak via HTTP JSON REST API
 bool writeThingSpeak(const char* timestamp, float temperature_esp32) {
   HTTPClient http;
-  Serial.print("Posting datapoint to ThingSpeak ...");
+  Serial.print("Logging data to ThingSpeak ...");
   http.begin(thingspeak_api_url);
   http.addHeader("Content-Type", "application/json");
   char payload[256];
@@ -401,7 +402,7 @@ void setup() {
   // Print program name, mode, and boot count
   Serial.println(title);
   Serial.printf("Mode: %s\n", modeStrings[currentMode]);
-  Serial.printf("Boot count since reset: %" PRIu32 "\n", bootCount);
+  Serial.printf("Boot count (since reset): %" PRIu32 "\n", bootCount);
 
   // ===== Initialize LittleFS =====
   if (!LittleFS.begin(true)) {
@@ -452,7 +453,7 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(wifi_ssid, wifi_password);
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
-  for (int i = 0; i < wifiConnectTimeoutSeconds * 10; i++) {  // configurable timeout
+  for (int i = 0; bootCount == 0 || i < wifiConnectTimeoutSeconds * 10; i++) { // No timeout on first boot
     if (WiFi.status() == WL_CONNECTED) {
       break;
     }
@@ -522,23 +523,25 @@ void setup() {
       // Sync ESP32 time from NTP
       if (WiFi.status() == WL_CONNECTED) {
         Serial.print("Syncing time from NTP ...");
-        time_t now = 0;
-        struct tm timeinfo;
         configTzTime(time_zone, ntpServerPrimary, ntpServerSecondary);
-        for(int i = 0; i < ntpSyncTimeoutSeconds * 10; i++) {  // configurable timeout
-            time(&now);
-            gmtime_r(&now, &timeinfo);
-            if (timeinfo.tm_year >= (2025 - 1900)) {
-              // Schedule next NTP sync
+        bool gotNTPSync = false;
+        for(int i = 0; bootCount == 0 || i < ntpSyncTimeoutSeconds * 10; i++) {
+            if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+              // Got time sync. Schedule next NTP sync
               bootsUntilNTCSync = ntpSyncIntervalSamplingPeriods;
+              gotNTPSync = true;
               break;
             }
             if (i % 10 == 9) {
               Serial.print(".");
             }
             delay(100);
+        }        
+        if (gotNTPSync) {
+          Serial.println(" DONE");
+        } else {
+          Serial.println(" FAILED (timeout)");
         }
-        Serial.println(" DONE");
         Serial.printf("Boots remaining until NTP sync: %" PRIi32 "\n", bootsUntilNTCSync);
         // Sync DS1308 RTC from ESP32 UTC time
         Serial.print("Syncing DS1308 RTC from ESP32 ...");
@@ -546,6 +549,12 @@ void setup() {
         Serial.println(" DONE");
       } else {
         Serial.println("Can't sync from NTP (WiFi not connected)");
+        if (bootCount == 0) {
+          Serial.println("NTP sync is mandatory on first boot. Halting.");
+          while (true) {
+            delay(1000);
+          }
+        }
       }
     } else {
       // No NTC sync on this boot
@@ -573,14 +582,21 @@ void setup() {
       Serial.printf("Boot-setup() latency: %.6f seconds\n", espTimerAtSetupStart/1e6f);
       Serial.printf("setup() start time (estimated): %s\n", setupStartTimeStr);
       float sampleShiftSeconds = (timeAtSetupStart.tv_sec - nominalWakeTime.tv_sec) + (timeAtSetupStart.tv_usec - nominalWakeTime.tv_usec) / 1e6f;
+      
       sampleCount++;
-      float delta_mean = (sampleShiftSeconds - meanSampleShiftSeconds) / sampleCount;
-      meanSampleShiftSeconds = meanSampleShiftSeconds + delta_mean;
-      float sampleShiftSecondsSquare = sampleShiftSeconds * sampleShiftSeconds;
-      float delta_mean_sq = (sampleShiftSecondsSquare - meanSquareSampleShiftSeconds) / sampleCount;
-      meanSquareSampleShiftSeconds = meanSquareSampleShiftSeconds + delta_mean_sq;
-      float rmsSampleShiftSeconds = sqrtf(meanSquareSampleShiftSeconds);
-      Serial.printf("Sample time shift from nominal (estimated): %.3f seconds (mean: %.3f, RMS: %.3f)\n", sampleShiftSeconds, meanSampleShiftSeconds, rmsSampleShiftSeconds);
+
+      // Welford update
+      float delta  = sampleShiftSeconds - meanSampleShiftSeconds;
+      meanSampleShiftSeconds += delta / sampleCount;
+      float delta2 = sampleShiftSeconds - meanSampleShiftSeconds;
+      M2 += delta * delta2;
+
+      // Compute values
+      float variance = (sampleCount > 1) ? (M2 / sampleCount) : 0.0f;          // population variance (It's good enough...)
+      float stddev  = sqrtf(variance);
+      float rms     = sqrtf( (M2 / sampleCount) + meanSampleShiftSeconds * meanSampleShiftSeconds );
+
+      Serial.printf("Sample time shift from nominal (estimated): %.3f seconds (mean: %.3f, stddev: %.3f, RMS: %.3f)\n", sampleShiftSeconds, meanSampleShiftSeconds, stddev, rms);
     }
 
     // Log sensor data if not the first boot
@@ -590,13 +606,14 @@ void setup() {
       formatTimeIso(nominalWakeTime.tv_sec, utcTimestampStrBuf, sizeof(utcTimestampStrBuf), nominalWakeTime.tv_usec);
 
       // Print to serial
-      while (!Serial) delay(100);
+      Serial.println("Logging data to serial");
       Serial.println("time_utc,temperature_esp32");
       Serial.printf("%s,%f\n", utcTimestampStrBuf, temperature_esp32);
 
       // Print to log file
       char logFileName[20];
       snprintf(logFileName, sizeof(logFileName), "/%.*s.csv", 7, utcTimestampStrBuf); // YYYY-MM.csv
+      Serial.println("Logging data to file in LittleFS: " + String(logFileName));
       if (!LittleFS.exists(logFileName)) {
         File logFile = LittleFS.open(logFileName, "w");
         if (logFile) {
@@ -609,14 +626,14 @@ void setup() {
         logFile.printf("%s,%f\n", utcTimestampStrBuf, temperature_esp32);
         logFile.close();
       } else {
-        Serial.println("Failed to open log file");
+        Serial.println("Failed to open file");
       }
 
       // Post to cloud
       if (WiFi.status() == WL_CONNECTED) {
         writeThingSpeak(utcTimestampStrBuf, temperature_esp32);
       } else {
-        Serial.println("Can't post to cloud (WiFi not connected)");
+        Serial.println("Can't log data to ThingSpeak (WiFi not connected)");
       }
     }
 
