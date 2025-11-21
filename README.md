@@ -133,8 +133,8 @@ gantt
     section Power-on
     ESP startup and Arduino init        :wake, 2026-01-02T00:00:00, 1s
 
-    section Sensor
-    Read sensor (data will be discarded)  :sensor, after wake, 1s
+    section Datalogger
+    Read sensor                         :sensor, after wake, 1s
 
     section WiFi and time
     RTC init                            :rtc, after sensor, 2s
@@ -160,15 +160,13 @@ gantt
     section Wake
     ESP wake and Arduino init   :wake, 2026-01-01T00:00:59, 1s
 
-    section Sensor
+    section Datalogger
     Read sensor                      :sensor, after wake, 1s
+    Log data                         :log, after espsync, 2s
 
     section WiFi and time
     RTC init                         :rtc, after sensor, 2s
     Sync ESP time from RTC           :espsync, after rtc, 1s
-
-    section Logging
-    Log data                         :log, after espsync, 2s
 
     section Sleep
     Schedule next wakeup             :sleepcalc, after log, 1s
@@ -187,17 +185,15 @@ gantt
     section Wake
     ESP wake and Arduino init   :wake, 2026-01-01T00:01:59, 1s
 
-    section Sensor
+    section Datalogger
     Read sensor                      :sensor, after wake, 1s
+    Log data                         :log, after rtcu, 2s
 
     section WiFi and time
     RTC init                         :rtc, after sensor, 2s
     Wi-Fi connect                    :wifi, after rtc, 3s
     Sync ESP time from NTP           :ntp, after wifi, 15s
     Sync RTC time from ESP           :rtcu, after ntp, 1s
-
-    section Logging
-    Log data                         :log, after rtcu, 2s
 
     section Sleep
     Schedule next wakeup             :sleepcalc, after log, 1s
