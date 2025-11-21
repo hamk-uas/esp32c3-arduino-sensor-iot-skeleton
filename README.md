@@ -162,11 +162,12 @@ gantt
 
     section Datalogger
     Read sensor                      :sensor, after wake, 1s
-    Log data                         :log, after espsync, 2s
+    Log data                         :log, after wifi, 2s
 
     section WiFi and time
     RTC init                         :rtc, after sensor, 2s
     Sync ESP time from RTC           :espsync, after rtc, 1s
+    Wi-Fi connect                    :wifi, after espsync, 3s
 
     section Sleep
     Schedule next wakeup             :sleepcalc, after log, 1s
@@ -215,42 +216,6 @@ The detailed boot count conditional boot sequence:
 9. **Sleep calculation**: Compute the next wake time and enter deep sleep until the next sample.
 
 **Boot counter**: The `bootCount` variable persists over deep sleep in ESP32-C3 RTC memory and is incremented just before deep sleep.
-
-The same as a flowchart:
-
-```mermaid
-flowchart TD
-    %% Nodes
-    A[Device Power-On or Wake from Deep Sleep] --> B[Sensor Reading: temperatureRead]
-    B --> C[Serial Initialization at 115200 baud]
-    C --> D[RTC Initialization: DS1308 via I2C and verify running]
-    D --> E{bootCount == 0?}
-    E -- Yes --> F[WiFi Scan and display available networks]
-    E -- No --> G[Skip WiFi Scan]
-    F --> H[Connect to Configured WiFi Network]
-    G --> H
-    H --> I{Time Synchronization?}
-    I -- Scheduled Boot for NTP --> J[NTP Sync and update RTC]
-    I -- Other Boot --> K[Sync ESP32 Time from RTC]
-    J --> L[Timing Diagnostics: compute setup start time and update its stats]
-    K --> L
-    L --> M{bootCount != 0?}
-    M -- Yes --> N[Data Logging: print CSV data with nominal wake timestamp]
-    M -- No --> O[Skip Data Logging]
-    N --> P[Sleep Calculation: compute next wake time and enter deep sleep]
-    O --> P
-    P --> A
-
-    %% Classes
-    classDef startEnd fill:#f9f,stroke:#333,stroke-width:2px,color:#000
-    classDef process fill:#bbf,stroke:#333,stroke-width:1px,color:#000
-    classDef decision fill:#fbf,stroke:#333,stroke-width:2px,color:#000
-
-    %% Assign classes
-    class A,P startEnd
-    class B,C,D,F,G,H,J,K,L,N,O process
-    class E,I,M decision
-```
 
 ### Time Synchronization
 
