@@ -201,7 +201,7 @@ gantt
     Deep Sleep                       :sleep, after sleepcalc, 34s
 ```
 
-The detailed boot count conditional boot sequence:
+The detailed boot-count-conditional boot sequence:
 
 1. **Sensor reading**: Immediately read temperature using `temperatureRead()` to minimize timing errors. Logging of the data is in step 8. This is a placeholder for your own sensor reading.
 2. **Serial initialization**:  Setup the serial monitor at 115200 baud for debugging and logging.
